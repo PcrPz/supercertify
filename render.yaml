@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: nest-backend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=512
+      - key: MONGO_URI
+        value: mongodb+srv://future:1234@supercertify.nztpkx1.mongodb.net/?retryWrites=true&w=majority&appName=supercertify
