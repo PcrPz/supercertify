@@ -1,29 +1,31 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Observable } from 'rxjs';
+import { ROLES_KEY } from 'src/decorators/roles.decorator';
+import { Role } from 'src/enum/role.enum';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
-    const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
-    
-    // ถ้าไม่ได้กำหนด roles ที่ต้องการ ให้อนุญาตเข้าถึง
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
     if (!requiredRoles) {
       return true;
     }
-    
     const { user } = context.switchToHttp().getRequest();
     
-    // ตรวจสอบว่ามีข้อมูล user จาก JwtAuthGuard หรือไม่
-    if (!user) {
-      throw new UnauthorizedException('User information is missing');
+    // เพิ่มการ debug เพื่อดูค่า user ที่ได้รับ
+    console.log('User in RolesGuard:', user);
+    
+    // ตรวจสอบว่า user มีค่าและมี roles หรือไม่
+    if (!user || !user.roles) {
+      console.log('User or roles is undefined:', user);
+      return false;
     }
     
-    // ตรวจสอบว่าผู้ใช้มี role ที่ต้องการหรือไม่
-    return requiredRoles.includes(user.role);
+    return requiredRoles.some((role) => user.roles.includes(role));
   }
 }

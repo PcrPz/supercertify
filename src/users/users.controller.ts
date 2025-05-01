@@ -1,9 +1,10 @@
 import { Controller, Get, Param, UseGuards, NotFoundException, SetMetadata, Patch, Body, Request, ForbiddenException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/enum/role.enum';
 
 // สร้าง Decorator สำหรับกำหนด Roles
-export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
 
 @Controller('users')
 export class UsersController {
@@ -25,7 +26,7 @@ export class UsersController {
   }
   
   @UseGuards(JwtAuthGuard)
-  @Roles('admin')
+  @Roles(Role.Admin)
   @Get()
   async getAllUsers() {
     const users = await this.usersService.findAll();
@@ -37,7 +38,7 @@ export class UsersController {
   }
   
   @UseGuards(JwtAuthGuard)
-  @Roles('admin')
+  @Roles(Role.Admin)
   @Get('by-role/:role')
   async getUsersByRole(@Param('role') role: string) {
     const users = await this.usersService.findByRole(role);
@@ -49,7 +50,7 @@ export class UsersController {
   }
   
   @UseGuards(JwtAuthGuard)
-  @Roles('admin')
+  @Roles(Role.Admin)
   @Patch(':id/role')
   async updateUserRole(
     @Param('id') id: string,
@@ -62,7 +63,7 @@ export class UsersController {
     }
     
     // ตรวจสอบว่าผู้ใช้เป็น admin หรือไม่ (เพิ่มความมั่นใจอีกชั้น)
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== Role.Admin) {
       throw new ForbiddenException('Only administrators can change user roles');
     }
     

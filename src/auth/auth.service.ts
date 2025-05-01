@@ -28,7 +28,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     
-    const payload = { username: user.username, sub: user._id, role: user.role };
+    // เปลี่ยนเป็น roles แทน role เพื่อให้สอดคล้องกับ RolesGuard
+    // และใช้ userId แทน sub เพื่อให้สอดคล้องกับ JwtStrategy
+    const payload = { 
+      username: user.username, 
+      sub: user._id, 
+      roles: Array.isArray(user.role) ? user.role : [user.role] // แน่ใจว่าเป็น array เสมอ
+    };
     
     return {
       access_token: this.jwtService.sign(payload),
@@ -44,7 +50,13 @@ export class AuthService {
   async register(registerDto: RegisterDto) {
     const user = await this.usersService.create(registerDto);
     
-    const payload = { email: user.email, sub: user._id, role: user.role };
+    // แก้ไขเหมือนกับ login method
+    const payload = { 
+      username: user.username, 
+      sub: user._id, 
+      roles: Array.isArray(user.role) ? user.role : [user.role] // แน่ใจว่าเป็น array เสมอ
+    };
+    
     return {
       access_token: this.jwtService.sign(payload),
       user: {
@@ -55,10 +67,16 @@ export class AuthService {
       },
     };
   }
+  
   async getUserProfile(user) {
-    // user อาจมีเพียง id หรือ email ที่มาจาก JWT payload
-    // จึงอาจต้องดึงข้อมูลเพิ่มเติมจากฐานข้อมูล
-    const userDetails = await this.usersService.findById(user.userId);
+    // ตรวจสอบว่ามี userId หรือไม่ (มาจาก JWT payload)
+    const userId = user.userId || user.sub;
+    
+    if (!userId) {
+      throw new UnauthorizedException('Invalid user information');
+    }
+    
+    const userDetails = await this.usersService.findById(userId);
     
     if (!userDetails) {
       throw new UnauthorizedException('User not found');

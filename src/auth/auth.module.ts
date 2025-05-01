@@ -19,7 +19,7 @@ import { ConfigService } from '@nestjs/config';
         return {
           secret: config.get<string>('JWT_SECRET'),
           signOptions: {
-            expiresIn: "1h",
+            expiresIn: "5h",
           },
         };
       },
@@ -28,10 +28,7 @@ import { ConfigService } from '@nestjs/config';
   providers: [
     AuthService, 
     JwtStrategy,
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
-    },
+    RolesGuard
   ],
   controllers: [AuthController],
   exports: [AuthService],
