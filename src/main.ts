@@ -13,7 +13,10 @@ async function bootstrap() {
     }),
   );
   
-  app.enableCors(); // เปิดใช้งาน CORS
+  app.enableCors({
+    origin:["http://localhost:3001/","https://supercertify-front.vercel.app/"],
+    credentials: true,
+  }); // เปิดใช้งาน CORS
   
   await app.listen(3000);
 }
