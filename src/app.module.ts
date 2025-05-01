@@ -7,6 +7,9 @@ import { UsersModule } from './users/users.module';
 import { ConfigModule } from '@nestjs/config';
 import { ServicesModule } from './services/services.module';
 import { PackagesModule } from './packages/packages.module';
+import { CandidatesModule } from './candidates/candidates.module';
+import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import config from './config/config';
 
 
@@ -14,7 +17,15 @@ import config from './config/config';
   imports: [ConfigModule.forRoot({
     isGlobal: true,
     load: [config],
-  }),UsersModule,DatabaseModule, AuthModule, ServicesModule, PackagesModule],
+  }),
+  UsersModule,
+  DatabaseModule,
+  AuthModule,
+  ServicesModule,
+  PackagesModule,
+  CandidatesModule,
+  OrdersModule,
+  PaymentsModule],
   controllers: [AppController],
   providers: [AppService],
 })

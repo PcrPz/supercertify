@@ -6,7 +6,7 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private usersService: UsersService,private configService: ConfigService) {
+  constructor(private usersService: UsersService, private configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -19,6 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new UnauthorizedException();
     }
-    return { userId: payload.sub, role: payload.role };
+    
+    // แปลง role เป็น roles array
+    return { 
+      userId: payload.sub, 
+      roles: payload.roles // แปลงเป็น array เพื่อให้เข้ากับ RolesGuard
+    };
   }
 }

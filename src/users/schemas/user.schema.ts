@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Model } from 'mongoose';
+import { Document, Model ,Schema as MongooseSchema} from 'mongoose';
 import * as bcrypt from 'bcrypt';
 
 // สร้าง interface สำหรับเมธอดที่เราจะเพิ่มเข้าไป
@@ -17,6 +17,10 @@ export type UserModel = Model<UserDocument>;
   timestamps: true,
 })
 export class User {
+
+  @Prop({ type: MongooseSchema.Types.ObjectId, auto: true })
+  _id: any;
+
   @Prop({ required: true, unique: true })
   username: string;
 
