@@ -13,10 +13,7 @@ async function bootstrap() {
     }),
   );
   
-  app.enableCors({
-    origin: '*',
-    credentials: true
-  }); // เปิดใช้งาน CORS
+  app.enableCors(); // เปิดใช้งาน CORS
   
   await app.listen(3000);
 }
