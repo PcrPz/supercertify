@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CandidatesService } from '../candidates/candidates.service';
-import { UpdatePaymentDto } from 'src/orders/dto/update-payment.dto';
 
 @Injectable()
 export class OrdersService {
@@ -14,29 +13,30 @@ export class OrdersService {
   ) {}
 
   async create(createOrderDto: CreateOrderDto, userId?: string): Promise<Order> {
-    // 1. สร้าง candidates
+    // 1. Create candidates
     const createdCandidates = await Promise.all(
       createOrderDto.candidates.map(candidateDto => 
         this.candidatesService.create(candidateDto)
       )
     );
   
-    // 2. สร้าง order
+    // 2. Create order
     const newOrder = new this.orderModel({
       OrderType: createOrderDto.OrderType,
-      OrderStatus: 'awaiting_payment', // กำหนดสถานะเริ่มต้นเป็น 'awaiting_payment'
+      OrderStatus: 'awaiting_payment', // Initial status
       TrackingNumber: this.generateTrackingNumber(),
-      user: userId, // ถ้ามีการเชื่อมโยงกับ user
+      user: userId,
       candidates: createdCandidates.map(candidate => candidate._id),
       TotalPrice: createOrderDto.totalPrice,
       SubTotalPrice: createOrderDto.subtotalPrice,
-      // เพิ่ม services เข้าไปใน order
+      // Add services to order
       services: createOrderDto.services.map(service => ({
         service: service.service,
         title: service.title,
         quantity: service.quantity,
         price: service.price
-      }))
+      })),
+      payment: null // Initialize with no payment
     });
   
     return newOrder.save();
@@ -46,6 +46,7 @@ export class OrdersService {
     return this.orderModel.find()
       .populate('candidates')
       .populate('user')
+      .populate('payment')
       .exec();
   }
 
@@ -53,6 +54,7 @@ export class OrdersService {
     const order = await this.orderModel.findById(id)
       .populate('candidates')
       .populate('user')
+      .populate('payment')
       .exec();
     
     if (!order) {
@@ -65,98 +67,8 @@ export class OrdersService {
   async findByUserId(userId: string): Promise<Order[]> {
     return this.orderModel.find({ user: userId })
       .populate('candidates')
+      .populate('payment')
       .exec();
-  }
-
-  // เพิ่มฟังก์ชันอัปเดตข้อมูลการชำระเงิน
-  async updatePayment(id: string, updatePaymentDto: UpdatePaymentDto, userId: string): Promise<Order> {
-    const order = await this.findOne(id);
-    
-    // สร้างข้อมูลการชำระเงิน
-    const paymentInfo = {
-      paymentMethod: updatePaymentDto.paymentMethod,
-      paymentStatus: updatePaymentDto.paymentStatus,
-      transferInfo: updatePaymentDto.transferInfo,
-      timestamp: updatePaymentDto.timestamp || new Date(),
-      paymentUpdatedAt: new Date(),
-      paymentUpdatedBy: userId
-    };
-    
-    // อัปเดต Order Status ตามสถานะการชำระเงิน
-    let orderStatus = 'awaiting_payment';
-    
-    if (updatePaymentDto.paymentStatus === 'pending_verification') {
-      orderStatus = 'pending_verification';
-    } else if (updatePaymentDto.paymentStatus === 'completed') {
-      orderStatus = 'payment_verified';
-    }
-    
-    // อัปเดต Order
-    const updatedOrder = await this.orderModel
-      .findByIdAndUpdate(
-        id,
-        {
-          paymentInfo: paymentInfo,
-          OrderStatus: orderStatus
-        },
-        { new: true }
-      )
-      .populate('candidates')
-      .populate('user')
-      .exec();
-    
-    if (!updatedOrder) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
-    }
-    
-    return updatedOrder;
-  }
-
-  // เพิ่มฟังก์ชันอัปเดตสถานะการชำระเงิน (สำหรับแอดมิน)
-  async updatePaymentStatus(id: string, status: string, userId: string): Promise<Order> {
-    const validStatuses = ['pending_verification', 'completed', 'awaiting_payment', 'failed', 'refunded'];
-    
-    if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid payment status. Must be one of: ${validStatuses.join(', ')}`);
-    }
-    
-    const order = await this.findOne(id);
-    
-    // อัปเดตข้อมูลการชำระเงิน
-    const paymentInfo = order.paymentInfo || {};
-    paymentInfo.paymentStatus = status;
-    paymentInfo.paymentUpdatedAt = new Date();
-    paymentInfo.paymentUpdatedBy = userId;
-    
-    // กำหนดสถานะ Order ตามสถานะการชำระเงิน
-    let orderStatus = order.OrderStatus;
-    
-    if (status === 'completed') {
-      orderStatus = 'payment_verified';
-    } else if (status === 'failed') {
-      orderStatus = 'awaiting_payment';
-    }
-    
-    // อัปเดต Order
-    const updatedOrder = await this.orderModel
-      .findByIdAndUpdate(
-        id,
-        {
-          paymentInfo: paymentInfo,
-          OrderStatus: orderStatus
-        },
-        { new: true }
-      )
-      .populate('candidates')
-      .populate('user')
-      .exec();
-    
-    // เพิ่มการตรวจสอบ null
-    if (!updatedOrder) {
-      throw new NotFoundException(`Order with ID ${id} not found after update`);
-    }
-    
-    return updatedOrder;
   }
 
   async updateOrderStatus(id: string, status: string): Promise<Order> {
@@ -177,6 +89,7 @@ export class OrdersService {
       )
       .populate('candidates')
       .populate('user')
+      .populate('payment')
       .exec();
     
     // Check if order exists
@@ -187,8 +100,39 @@ export class OrdersService {
     return updatedOrder;
   }
 
+  async deleteOrder(id: string): Promise<any> {
+    // ตรวจสอบว่า order นี้มีอยู่จริงหรือไม่
+    const order = await this.orderModel.findById(id).exec();
+    if (!order) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+    
+    // ลบข้อมูล candidates ที่เกี่ยวข้อง
+    if (order.candidates && order.candidates.length > 0) {
+      try {
+        await Promise.all(
+          order.candidates.map(candidateId => 
+            this.candidatesService.remove(candidateId.toString())
+          )
+        );
+      } catch (error) {
+        console.error('Error deleting candidates:', error);
+        // ไม่ throw error ในกรณีนี้ เพื่อให้สามารถลบ order ได้แม้ว่าจะลบ candidates ไม่สำเร็จ
+      }
+    }
+    
+    // ลบข้อมูล order
+    const result = await this.orderModel.findByIdAndDelete(id).exec();
+    
+    return {
+      success: true,
+      message: 'Order deleted successfully',
+      deletedOrder: result
+    };
+  }
+
   private generateTrackingNumber(): string {
-    const prefix = 'TRK';
+    const prefix = 'SCT';
     const timestamp = Date.now().toString().substring(5);
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     return `${prefix}${timestamp}${random}`;

@@ -1,14 +1,13 @@
-import { Controller, Get, Post, Body, Param, Put, UseGuards, Request, ForbiddenException } from '@nestjs/common';
+// src/orders/orders.controller.ts
+import { Controller, Get, Post,Delete, Body, Param, Put, UseGuards, Request, ForbiddenException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Order } from './schemas/order.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-
-import { UpdatePaymentDto, UpdatePaymentStatusDto } from 'src/orders/dto/update-payment.dto';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enum/role.enum';
-
+import { User } from 'src/decorators/user.decorator';
 
 @Controller('api/orders')
 export class OrdersController {
@@ -21,7 +20,7 @@ export class OrdersController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.Admin)
   findAll(): Promise<Order[]> {
     return this.ordersService.findAll();
@@ -35,67 +34,60 @@ export class OrdersController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id') id: string, @Request() req): Promise<Order> {
+  async findOne(@Param('id') id: string, @User() user): Promise<Order> {
     const order = await this.ordersService.findOne(id);
-    
-    if (req.user.role !== Role.Admin && order.user._id.toString() !== req.user.userId) {
+    if ( !user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
       throw new ForbiddenException('You do not have permission to access this order');
     }
     
     return order;
   }
 
-  // เพิ่ม endpoint สำหรับอัปเดตข้อมูลการชำระเงิน
-  @Post(':id/payment')
+
+    // Delete an order
+  @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  async updatePayment(
-    @Param('id') id: string,
-    @Body() updatePaymentDto: UpdatePaymentDto,  // ต้องแน่ใจว่า import มาจากที่ถูกต้อง
-    @Request() req
-  ): Promise<Order> {
-    console.log('Received payment data:', updatePaymentDto); // เพิ่ม log เพื่อตรวจสอบข้อมูล
-    
+  async deleteOrder(@Param('id') id: string, @User() user): Promise<any> {
     const order = await this.ordersService.findOne(id);
     
-    // ตรวจสอบสิทธิ์
-    if (req.user.role !== Role.Admin && order.user._id.toString() !== req.user.userId) {
-      throw new ForbiddenException('You do not have permission to update payment for this order');
+    // Check if user has permission to delete this order
+    if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+      throw new ForbiddenException('You do not have permission to delete this order');
     }
     
-    return this.ordersService.updatePayment(id, updatePaymentDto, req.user.userId);
+    // Check if order is in a state that allows deletion
+    if (order.OrderStatus !== 'awaiting_payment') {
+      throw new ForbiddenException('Orders can only be deleted when in "awaiting_payment" status');
+    }
+    
+    return this.ordersService.deleteOrder(id);
   }
 
-  // เพิ่ม endpoint สำหรับตรวจสอบสถานะการชำระเงิน
+  // Get payment status of an order
   @Get(':id/payment-status')
   @UseGuards(JwtAuthGuard)
-  async getPaymentStatus(
-    @Param('id') id: string,
-    @Request() req
-  ): Promise<any> {
+  async getPaymentStatus(@Param('id') id: string, @Request() req): Promise<any> {
     const order = await this.ordersService.findOne(id);
     
-    // ตรวจสอบสิทธิ์
     if (req.user.role !== Role.Admin && order.user._id.toString() !== req.user.userId) {
       throw new ForbiddenException('You do not have permission to view payment status for this order');
     }
     
     return {
       orderId: id,
-      paymentMethod: order.paymentInfo?.paymentMethod,
-      status: order.paymentInfo?.paymentStatus || 'awaiting_payment',
       orderStatus: order.OrderStatus,
-      updatedAt: order.paymentInfo?.paymentUpdatedAt
+      payment: order.payment
     };
   }
 
-  // เพิ่ม endpoint สำหรับแอดมินอัปเดตสถานะการชำระเงิน
-  @Put(':id/payment-status')
-  @UseGuards(JwtAuthGuard,RolesGuard)
-  @Roles(Role.Admin)  async updatePaymentStatus(
+  // Update order status (admin only)
+  @Put(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  async updateOrderStatus(
     @Param('id') id: string,
-    @Body() updatePaymentStatusDto: UpdatePaymentStatusDto,
-    @Request() req
+    @Body('status') status: string
   ): Promise<Order> {
-    return this.ordersService.updatePaymentStatus(id, updatePaymentStatusDto.paymentStatus, req.user.userId);
+    return this.ordersService.updateOrderStatus(id, status);
   }
 }

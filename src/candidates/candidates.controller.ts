@@ -1,13 +1,11 @@
-// src/candidates/candidates.controller.ts
 import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards } from '@nestjs/common';
 import { CandidatesService } from './candidates.service';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { UpdateCandidateDto } from './dto/update-candidate.dto';
-import { Candidate } from './schemas/candidate.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { Roles } from 'src/decorators/roles.decorator';
-import { Role } from 'src/enum/role.enum';
-
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
+import { Role } from '../enum/role.enum';
 
 @Controller('api/candidates')
 export class CandidatesController {
@@ -15,42 +13,39 @@ export class CandidatesController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  create(@Body() createCandidateDto: CreateCandidateDto): Promise<Candidate> {
+  create(@Body() createCandidateDto: CreateCandidateDto) {
     return this.candidatesService.create(createCandidateDto);
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  findAll(): Promise<Candidate[]> {
+  findAll() {
     return this.candidatesService.findAll();
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  findOne(@Param('id') id: string): Promise<Candidate> {
+  findOne(@Param('id') id: string) {
     return this.candidatesService.findOne(id);
   }
 
   @Put(':id')
   @UseGuards(JwtAuthGuard)
-  update(
-    @Param('id') id: string,
-    @Body() updateCandidateDto: UpdateCandidateDto,
-  ): Promise<Candidate> {
+  update(@Param('id') id: string, @Body() updateCandidateDto: UpdateCandidateDto) {
     return this.candidatesService.update(id, updateCandidateDto);
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  remove(@Param('id') id: string): Promise<void> {
+  remove(@Param('id') id: string) {
     return this.candidatesService.remove(id);
   }
 
   @Get('order/:orderId')
   @UseGuards(JwtAuthGuard)
-  findByOrderId(@Param('orderId') orderId: string): Promise<Candidate[]> {
+  findByOrderId(@Param('orderId') orderId: string) {
     return this.candidatesService.findByOrderId(orderId);
   }
 }

@@ -1,4 +1,3 @@
-// src/candidates/candidates.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -42,11 +41,18 @@ export class CandidatesService {
     return updatedCandidate;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string): Promise<any> {
     const result = await this.candidateModel.deleteOne({ _id: id }).exec();
+    
     if (result.deletedCount === 0) {
       throw new NotFoundException(`Candidate with ID ${id} not found`);
     }
+    
+    return {
+      success: true,
+      message: 'Candidate deleted successfully',
+      deletedCount: result.deletedCount
+    };
   }
 
   async findByOrderId(orderId: string): Promise<Candidate[]> {

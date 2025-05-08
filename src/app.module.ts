@@ -10,6 +10,8 @@ import { PackagesModule } from './packages/packages.module';
 import { CandidatesModule } from './candidates/candidates.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
+import { MinioModule } from './minio/minio.module';
+import { FilesModule } from './files/files.module';
 import config from './config/config';
 
 
@@ -25,7 +27,9 @@ import config from './config/config';
   PackagesModule,
   CandidatesModule,
   OrdersModule,
-  PaymentsModule],
+  PaymentsModule,
+  MinioModule,
+  FilesModule],
   controllers: [AppController],
   providers: [AppService],
 })
