@@ -8,27 +8,40 @@ export type PaymentDocument = Payment & Document;
 @Schema({ timestamps: true })
 export class Payment {
   @Prop()
-  P_ID: string;
+  Payment_ID: string;
 
-  @Prop()
-  P_Uname: string;
+  @Prop({ 
+    required: true, 
+    enum: ['qr_payment', 'bank_transfer'] 
+  })
+  paymentMethod: string;
 
-  @Prop({ required: true, enum: ['credit_card', 'bank_transfer', 'prompt_pay'] })
-  P_Type: string;
+  @Prop({ 
+    required: true, 
+    default: 'awaiting_payment',
+    enum: ['pending_verification', 'completed', 'awaiting_payment', 'failed', 'refunded']
+  })
+  paymentStatus: string;
 
-  @Prop({ default: 'pending', enum: ['pending', 'processing', 'completed', 'failed'] })
-  P_Status: string;
+  @Prop({ type: Object })
+  transferInfo: {
+    name?: string;
+    date?: string;
+    amount?: string;
+    reference?: string;
+    receiptUrl?: string;
+  };
 
-  @Prop()
-  P_Email: string;
+  @Prop({ type: Date })
+  timestamp: Date;
 
-  @Prop()
-  P_Tel: string;
+  @Prop({ type: Date })
+  paymentUpdatedAt: Date;
 
-  @Prop({ required: true, type: Number })
-  Amount: number;
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
+  paymentUpdatedBy: string;
 
-  // ความสัมพันธ์กับ Order
+  // Relationship with Order
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Order', required: true })
   order: Order;
 }
