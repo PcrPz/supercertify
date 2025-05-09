@@ -12,5 +12,24 @@ services:
     restart: unless-stopped
     env_file:
         - .env
+
+
+  minio:
+    image: bitnami/minio:2024.11.7
+    restart: always
+    ports:
+      - ${MINIO_PORT}:${MINIO_PORT}
+      - ${MINIO_CONSOLE_PORT}:${MINIO_CONSOLE_PORT}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+      MINIO_DEFAULT_BUCKETS: ${MINIO_BUCKET}
+      MINIO_API_PORT_NUMBER: ${MINIO_PORT}
+      MINIO_CONSOLE_PORT_NUMBER: ${MINIO_CONSOLE_PORT}
+    volumes:
+      - minio-data:/bitnami/minio/data
+
 volumes:
   mongo_storage: {}
+  minio-data:
+    driver: local
