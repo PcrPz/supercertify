@@ -1,5 +1,5 @@
 // src/payments/payments.controller.ts
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Request, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Request, ForbiddenException, NotFoundException,BadRequestException ,UseInterceptors, UploadedFile  } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto, UpdatePaymentStatusDto } from './dto/update-payment.dto';
@@ -11,34 +11,69 @@ import { Role } from 'src/enum/role.enum';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesService } from '../files/files.service'; // เพิ่ม import
+import { User } from 'src/decorators/user.decorator';
+
 
 @Controller('api/payments')
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
+    private readonly filesService: FilesService, // เพิ่ม FilesService
   ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('receipt'))
   async create(
-    @Body() createPaymentDto: CreatePaymentDto,
-    @Request() req
+    @Body() body: any,
+    @UploadedFile() receipt: Express.Multer.File,
+    @User() user
   ): Promise<Payment> {
-    // Check if user has permission to create payment for this order
-    const order = await this.orderModel.findById(createPaymentDto.orderId);
+    // ตรวจสอบว่า order มีอยู่จริง
+    const order = await this.orderModel.findById(body.orderId);
     if (!order) {
-      throw new NotFoundException('Order not found');
+      throw new NotFoundException(`Order with ID ${body.orderId} not found`);
     }
     
-    // Safe navigation - check if user exists and convert to string
+    // ตรวจสอบสิทธิ์
     const orderUserId = order.user ? order.user.toString() : null;
-    
-    if (req.user.role !== Role.Admin && orderUserId !== req.user.userId) {
+    if ( !user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
       throw new ForbiddenException('You do not have permission to create payment for this order');
     }
     
-    return this.paymentsService.create(createPaymentDto, req.user.userId);
+    // สร้าง DTO จาก body
+    const createPaymentDto: CreatePaymentDto = {
+      paymentMethod: body.paymentMethod,
+      orderId: body.orderId,
+      transferInfo: {
+        name: body['transferInfo.name'],
+        date: body['transferInfo.date'],
+        amount: body['transferInfo.amount'],
+        reference: body['transferInfo.reference'],
+        receiptUrl: undefined // เปลี่ยนจาก null เป็น undefined
+      }
+    };
+    
+    // จัดการการอัปโหลดไฟล์
+    if (receipt) {
+      try {
+        const uploadResult = await this.filesService.uploadFile(receipt);
+        const receiptUrl = await this.filesService.getFile(uploadResult.filename);
+        
+        // ตรวจสอบว่า transferInfo มีค่าก่อนที่จะใช้งาน
+        if (createPaymentDto.transferInfo) { // เพิ่มการตรวจสอบ
+          createPaymentDto.transferInfo.receiptUrl = receiptUrl;
+        }
+      } catch (error) {
+        console.error('Failed to upload receipt:', error);
+      }
+    }
+    
+    // สร้างการชำระเงินในฐานข้อมูล
+    return this.paymentsService.create(createPaymentDto, user.userId);
   }
 
   @Get()
