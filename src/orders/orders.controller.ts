@@ -90,4 +90,27 @@ export class OrdersController {
   ): Promise<Order> {
     return this.ordersService.updateOrderStatus(id, status);
   }
+
+  @Put(':id/complete-documents')
+  @UseGuards(JwtAuthGuard)
+  async completeDocuments(
+    @Param('id') id: string,
+    @User() user
+  ): Promise<Order> {
+    // ดึงข้อมูล order
+    const order = await this.ordersService.findOne(id);
+    
+    // ตรวจสอบสิทธิ์
+    if (order.user._id.toString() !== user.userId && !user.roles.includes(Role.Admin)) {
+      throw new ForbiddenException('You do not have permission to update this order');
+    }
+    
+    // ตรวจสอบสถานะปัจจุบัน
+    if (order.OrderStatus !== 'payment_verified') {
+      throw new ForbiddenException('Order status can only be updated to processing when current status is payment_verified');
+    }
+    
+    // อัปเดทสถานะเป็น processing
+    return this.ordersService.updateOrderStatus(id, 'processing');
+  }
 }

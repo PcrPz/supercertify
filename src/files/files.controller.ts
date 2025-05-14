@@ -1,7 +1,8 @@
 // src/files/files.controller.ts
-import { Body, Controller, Get, Param, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FilesService, UploadResult } from './files.service'; // เพิ่ม import UploadResult
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Body, Controller, Get, Param, Post, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FilesService, UploadResult } from './files.service';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+
 
 @Controller('files')
 export class FilesController {
@@ -23,5 +24,15 @@ export class FilesController {
     @UploadedFile('file') file: Express.Multer.File,
   ): Promise<UploadResult> { // ระบุ return type ให้ชัดเจน
     return this.service.uploadFile(file);
+  }
+
+  @Post('upload-multiple')
+  @UseInterceptors(FilesInterceptor('files', 10)) // รองรับได้สูงสุด 10 ไฟล์
+  uploadMultipleFiles(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body('folder') folder?: string,
+    @Body('filenames') customFilenames?: string[]
+  ): Promise<UploadResult[]> {
+    return this.service.uploadMultipleFiles(files, folder, customFilenames);
   }
 }

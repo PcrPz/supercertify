@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
@@ -9,7 +9,7 @@ import { CandidatesService } from '../candidates/candidates.service';
 export class OrdersService {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
-    private candidatesService: CandidatesService,
+    @Inject(forwardRef(() => CandidatesService)) private candidatesService: CandidatesService,
   ) {}
 
   async create(createOrderDto: CreateOrderDto, userId?: string): Promise<Order> {

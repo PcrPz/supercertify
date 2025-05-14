@@ -58,6 +58,15 @@ export class FilesService {
       );
     });
   }
+
+async uploadMultipleFiles(files: Express.Multer.File[], folder?: string, customFilenames?: string[]): Promise<UploadResult[]> {
+  const uploadPromises = files.map((file, index) => {
+    const customFilename = customFilenames && customFilenames[index] ? customFilenames[index] : undefined;
+    return this.uploadFile(file, folder, customFilename);
+  });
+  
+  return Promise.all(uploadPromises);
+}
   
   async deleteFile(filename: string): Promise<boolean> {
     try {
