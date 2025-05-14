@@ -1,5 +1,25 @@
 // src/services/dto/update-service.dto.ts
-import { IsOptional, IsNumber, IsString, IsArray } from 'class-validator';
+import { IsOptional, IsNumber, IsString, IsArray, ValidateNested, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class RequiredDocumentDto {
+  @IsString()
+  document_id: string;
+  
+  @IsString()
+  document_name: string;
+  
+  @IsBoolean()
+  required: boolean;
+  
+  @IsArray()
+  @IsString({ each: true })
+  file_types: string[];
+  
+  @IsOptional()
+  @IsNumber()
+  max_size?: number;
+}
 
 export class UpdateServiceDto {
   @IsOptional()
@@ -22,4 +42,10 @@ export class UpdateServiceDto {
   @IsArray()
   @IsString({ each: true })
   List_File?: string[];
+  
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RequiredDocumentDto)
+  RequiredDocuments?: RequiredDocumentDto[];
 }

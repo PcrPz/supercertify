@@ -13,5 +13,6 @@ import { Service, ServiceSchema } from './schemas/service.schema';
   ],
   controllers: [ServicesController],
   providers: [ServicesService],
+  exports:[ServicesService]
 })
 export class ServicesModule {}
