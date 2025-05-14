@@ -16,9 +16,10 @@ export type OrderDocument = Order & Document;
 
 @Schema({ timestamps: true })
 export class Order {
-  @Prop()
-  Order_ID: string;
 
+  @Prop({ type: MongooseSchema.Types.ObjectId, auto: true })
+  _id: any;
+  
   @Prop({ required: true, enum: ['company', 'personal'] })
   OrderType: string;
 

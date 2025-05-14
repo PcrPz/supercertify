@@ -1,5 +1,5 @@
 // src/orders/orders.controller.ts
-import { Controller, Get, Post,Delete, Body, Param, Put, UseGuards, Request, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post,Delete, Body, Param, Put, UseGuards, Request, ForbiddenException,NotFoundException,BadRequestException} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Order } from './schemas/order.schema';
@@ -113,4 +113,30 @@ export class OrdersController {
     // อัปเดทสถานะเป็น processing
     return this.ordersService.updateOrderStatus(id, 'processing');
   }
+
+  @Get('track/:trackingNumber')
+  async findByTrackingNumber(@Param('trackingNumber') trackingNumber: string): Promise<Order> {
+    return this.ordersService.findByTrackingNumber(trackingNumber);
+  }
+
+  @Get('public/track/:trackingNumber')
+  async trackOrder(@Param('trackingNumber') trackingNumber: string): Promise<any> {
+    try {
+      const order = await this.ordersService.findByTrackingNumber(trackingNumber) as any;
+      
+      // เพิ่ม id field ให้ตรงกับที่ frontend คาดหวัง (ถ้า _id เป็น Object)
+      if (order._id) {
+        order.id = order._id.toString();
+      }
+      
+      return order;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Error tracking order');
+    }
+  }
+
+  
 }

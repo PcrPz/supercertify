@@ -131,6 +131,20 @@ export class OrdersService {
     };
   }
 
+  async findByTrackingNumber(trackingNumber: string): Promise<Order> {
+    const order = await this.orderModel.findOne({ TrackingNumber: trackingNumber })
+      .populate('candidates')
+      .populate('user')
+      .populate('payment')
+      .exec();
+    
+    if (!order) {
+      throw new NotFoundException(`Order with tracking number ${trackingNumber} not found`);
+    }
+    
+    return order;
+  }
+
   private generateTrackingNumber(): string {
     const prefix = 'SCT';
     const timestamp = Date.now().toString().substring(5);
