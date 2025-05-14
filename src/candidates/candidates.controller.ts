@@ -45,7 +45,7 @@ export class CandidatesController {
 
   @Get('order/:orderId')
   @UseGuards(JwtAuthGuard)
-  findByOrderId(@Param('orderId') orderId: string) {
+  async findByOrderId(@Param('orderId') orderId: string) {
     return this.candidatesService.findByOrderId(orderId);
   }
 }

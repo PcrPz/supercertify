@@ -1,14 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+// src/candidates/candidates.service.ts
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Candidate, CandidateDocument } from './schemas/candidate.schema';
 import { CreateCandidateDto } from './dto/create-candidate.dto';
 import { UpdateCandidateDto } from './dto/update-candidate.dto';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class CandidatesService {
   constructor(
     @InjectModel(Candidate.name) private candidateModel: Model<CandidateDocument>,
+    @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService
   ) {}
 
   async create(createCandidateDto: CreateCandidateDto): Promise<Candidate> {
@@ -56,8 +59,29 @@ export class CandidatesService {
   }
 
   async findByOrderId(orderId: string): Promise<Candidate[]> {
-    // หมายเหตุ: ใช้วิธีนี้เมื่อมี Order ที่อ้างอิงถึง Candidate
-    // ถ้า candidates เก็บใน order แทน ให้ใช้การ populate แทน
-    return this.candidateModel.find({ order: orderId }).populate('services').exec();
+    try {
+      // ดึงข้อมูล Order ก่อน - ใช้ findOne ตามที่มีใน OrdersService
+      const order = await this.ordersService.findOne(orderId);
+      
+      if (!order) {
+        throw new NotFoundException(`Order with ID ${orderId} not found`);
+      }
+      
+      // ถ้า order.candidates ถูก populate แล้ว (เป็น Object แทนที่จะเป็น ID)
+      if (order.candidates && Array.isArray(order.candidates) && order.candidates.length > 0 && 
+          typeof order.candidates[0] !== 'string' && typeof order.candidates[0] === 'object') {
+        return order.candidates;
+      }
+      
+      // ถ้ายังไม่ได้ populate ให้ค้นหา Candidates ตาม ID ที่อยู่ใน order.candidates
+      return this.candidateModel.find({
+        _id: { $in: order.candidates }
+      }).populate('services').exec();
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(`Error finding candidates: ${error.message}`);
+    }
   }
 }
