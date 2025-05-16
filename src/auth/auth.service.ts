@@ -42,6 +42,8 @@ export class AuthService {
         id: user._id,
         username: user.username,
         email: user.email,
+        phoneNumber: user.phoneNumber,  // เพิ่มฟิลด์เบอร์โทรศัพท์
+        companyName: user.companyName,  // เพิ่มฟิลด์ชื่อบริษัท
         role: user.role,
       },
     };
@@ -63,6 +65,8 @@ export class AuthService {
         id: user._id,
         username: user.username,
         email: user.email,
+        phoneNumber: user.phoneNumber,  // เพิ่มฟิลด์เบอร์โทรศัพท์
+        companyName: user.companyName,  // เพิ่มฟิลด์ชื่อบริษัท
         role: user.role,
       },
     };

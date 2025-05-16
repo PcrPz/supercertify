@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, MinLength, IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsEmail, IsNotEmpty, MinLength, IsString, IsOptional, IsEnum, Matches } from 'class-validator';
 
 export class RegisterDto {
   @IsNotEmpty()
@@ -13,6 +13,15 @@ export class RegisterDto {
   @IsString()
   @MinLength(6)
   password: string;
+  
+  @IsNotEmpty()
+  @IsString()
+  @Matches(/^[0-9\+\-\s]+$/, { message: 'Phone number format is invalid' })
+  phoneNumber: string;  // เพิ่มฟิลด์เบอร์โทรศัพท์
+  
+  @IsOptional()
+  @IsString()
+  companyName?: string;  // เพิ่มฟิลด์ชื่อบริษัท (optional)
   
   @IsOptional()
   @IsEnum(['user', 'admin'], { message: 'Role must be either user or admin' })
