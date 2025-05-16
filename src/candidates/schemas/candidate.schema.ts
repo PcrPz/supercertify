@@ -22,6 +22,21 @@ export class Candidate {
 
   @Prop({ type: [{ type: MongooseSchema.Types.ObjectId, ref: 'Service' }] })
   services: Service[];
+  
+  @Prop({
+  type: {
+    resultFile: String,         // URL ของไฟล์ผลการตรวจสอบ
+    resultFileName: String,     // ชื่อไฟล์ผลการตรวจสอบ
+    resultFileType: String,     // ประเภทไฟล์ผลการตรวจสอบ
+    resultFileSize: Number,     // ขนาดไฟล์ผลการตรวจสอบ
+    resultStatus: { type: String, enum: ['pass', 'fail', 'pending'], default: 'pending' }, // สถานะผลการตรวจสอบ
+    resultAddedAt: Date,        // วันที่เพิ่มผลการตรวจสอบ
+    resultAddedBy: { type: MongooseSchema.Types.ObjectId, ref: 'User' }, // ผู้เพิ่มผลการตรวจสอบ
+    resultNotes: String         // หมายเหตุเพิ่มเติม
+  },
+  default: null
+})
+result: Record<string, any>;
 }
 
 export const CandidateSchema = SchemaFactory.createForClass(Candidate);

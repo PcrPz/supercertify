@@ -1,5 +1,5 @@
 // src/orders/orders.controller.ts
-import { Controller, Get, Post,Delete, Body, Param, Put, UseGuards, Request, ForbiddenException,NotFoundException,BadRequestException} from '@nestjs/common';
+import { Controller, Get, Post,Delete, Body, Param, Put, UseGuards, Request, ForbiddenException,NotFoundException,BadRequestException, Inject, forwardRef} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Order } from './schemas/order.schema';
@@ -8,10 +8,14 @@ import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enum/role.enum';
 import { User } from 'src/decorators/user.decorator';
+import { CandidatesService } from 'src/candidates/candidates.service';
 
 @Controller('api/orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    @Inject(forwardRef(() => CandidatesService)) private candidatesService: CandidatesService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -30,6 +34,36 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   findMyOrders(@Request() req): Promise<Order[]> {
     return this.ordersService.findByUserId(req.user.userId);
+  }
+
+    @Get('with-results-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  async getOrdersWithResultsStatus() {
+    const orders = await this.ordersService.findAll();
+    
+    // เพิ่มข้อมูลเกี่ยวกับสถานะผลการตรวจสอบ
+    const ordersWithStatus = await Promise.all(orders.map(async order => {
+      // ดึงข้อมูล Candidates ทั้งหมดในคำสั่ง
+      const candidates = await this.candidatesService.findByOrderIdWithResults(order._id.toString());
+      
+      // นับจำนวน Candidates ที่มีผลการตรวจสอบแล้ว
+      const completedResults = candidates.filter(candidate => candidate.result !== null).length;
+      
+      // สถานะว่าครบหรือไม่
+      const isComplete = completedResults === candidates.length && candidates.length > 0;
+      
+      return {
+        ...JSON.parse(JSON.stringify(order)),
+        resultStatus: {
+          total: candidates.length,
+          completed: completedResults,
+          isComplete
+        }
+      };
+    }));
+    
+    return ordersWithStatus;
   }
 
   @Get(':id')
