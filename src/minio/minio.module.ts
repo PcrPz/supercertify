@@ -18,7 +18,8 @@ import { MINIO_TOKEN } from 'src/decorators/minio.decorator';
           port: +configService.getOrThrow("MINIO_PORT"),
           accessKey: configService.getOrThrow("MINIO_ACCESS_KEY"),
           secretKey: configService.getOrThrow("MINIO_SECRET_KEY"),
-          useSSL: false,
+          useSSL: true,  // เปลี่ยนเป็น true
+          region: configService.get("MINIO_REGION", "auto"),  // เพิ่มบรรทัดนี้
         });
         return client;
       },
