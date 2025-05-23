@@ -1,10 +1,11 @@
 // src/orders/schemas/order.schema.ts
+// ตรวจสอบว่า Schema มี field ที่จำเป็น
+
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { User } from '../../users/schemas/user.schema';
 import { Candidate } from '../../candidates/schemas/candidate.schema';
 
-// Interface for OrderService
 export interface OrderService {
   service: string;
   title: string;
@@ -16,10 +17,9 @@ export type OrderDocument = Order & Document;
 
 @Schema({ timestamps: true })
 export class Order {
-
   @Prop({ type: MongooseSchema.Types.ObjectId, auto: true })
   _id: any;
-  
+
   @Prop({ required: true, enum: ['company', 'personal'] })
   OrderType: string;
 
@@ -51,7 +51,6 @@ export class Order {
   @Prop({ required: true })
   SubTotalPrice: number;
 
-  // Services in schema
   @Prop({ 
     type: [{
       service: { type: String, required: true },
@@ -63,11 +62,19 @@ export class Order {
   })
   services: OrderService[];
   
-  // Reference to payment (1:1 relationship)
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Payment' })
   payment: MongooseSchema.Types.ObjectId;
   
-  // Flag for email notifications
+  // ✅ ตรวจสอบว่ามี field เหล่านี้
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Coupon', default: null })
+  coupon: MongooseSchema.Types.ObjectId;
+  
+  @Prop({ default: 0 })
+  couponDiscount: number; // ✅ จำนวนเงินส่วนลดจากคูปอง
+  
+  @Prop({ default: 0 })
+  promotionDiscount: number; // ✅ จำนวนเงินส่วนลดจากโปรโมชั่น
+  
   @Prop({ default: false })
   paymentNotificationSent: boolean;
   

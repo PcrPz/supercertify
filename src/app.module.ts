@@ -13,6 +13,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { MinioModule } from './minio/minio.module';
 import { FilesModule } from './files/files.module';
 import { DocumentsModule } from './documents/documents.module';
+import { CouponsModule } from './coupons/coupons.module';
 import config from './config/config';
 
 
@@ -31,7 +32,8 @@ import config from './config/config';
   PaymentsModule,
   MinioModule,
   FilesModule,
-  DocumentsModule],
+  DocumentsModule,
+  CouponsModule],
   controllers: [AppController],
   providers: [AppService],
 })

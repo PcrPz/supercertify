@@ -2,19 +2,24 @@
 import { Controller, Get, Post,Delete, Body, Param, Put, UseGuards, Request, ForbiddenException,NotFoundException,BadRequestException, Inject, forwardRef} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { Order } from './schemas/order.schema';
+import { Order, OrderDocument } from './schemas/order.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/enum/role.enum';
 import { User } from 'src/decorators/user.decorator';
 import { CandidatesService } from 'src/candidates/candidates.service';
+import { CouponsService } from 'src/coupons/coupons.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 
 @Controller('api/orders')
 export class OrdersController {
   constructor(
     private readonly ordersService: OrdersService,
     @Inject(forwardRef(() => CandidatesService)) private candidatesService: CandidatesService,
+    private readonly couponsService: CouponsService, // เพิ่มบรรทัดนี้
+    @InjectModel(Order.name) private orderModel: Model<OrderDocument>, // เพิ่มบรรทัดนี้
   ) {}
 
   @Post()
@@ -84,17 +89,30 @@ export class OrdersController {
   async deleteOrder(@Param('id') id: string, @User() user): Promise<any> {
     const order = await this.ordersService.findOne(id);
     
-    // Check if user has permission to delete this order
+    // Check permissions
     if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
       throw new ForbiddenException('You do not have permission to delete this order');
     }
     
-    // Check if order is in a state that allows deletion
+    // ✅ เพิ่มการเตือนถ้ามีคูปอง
+    if (order.coupon) {
+      console.log(`⚠️ Order ${id} has coupon ${order.coupon}, will be released upon deletion`);
+    }
+    
+    // Check if order can be deleted
     if (order.OrderStatus !== 'awaiting_payment') {
       throw new ForbiddenException('Orders can only be deleted when in "awaiting_payment" status');
     }
     
-    return this.ordersService.deleteOrder(id);
+    const result = await this.ordersService.deleteOrder(id);
+    
+    // ✅ เพิ่มข้อมูลใน response
+    return {
+      ...result,
+      message: result.couponReleased 
+        ? 'Order deleted successfully and coupon has been released for reuse'
+        : 'Order deleted successfully'
+    };
   }
 
   // Get payment status of an order
@@ -171,6 +189,242 @@ export class OrdersController {
       throw new BadRequestException('Error tracking order');
     }
   }
+@Post(':id/check-coupon')
+@UseGuards(JwtAuthGuard)
+async checkOrderCoupon(
+  @Param('id') id: string,
+  @Body() body: { couponCode: string },
+  @User() user
+) {
+  const order = await this.ordersService.findOne(id);
+  
+  // ตรวจสอบสิทธิ์
+  if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+    throw new ForbiddenException('You do not have permission to use coupon with this order');
+  }
+  
+  // ตรวจสอบว่าคำสั่งซื้ออยู่ในสถานะที่ยังไม่ชำระเงิน
+  if (order.OrderStatus !== 'awaiting_payment') {
+    throw new BadRequestException('คูปองสามารถใช้ได้เฉพาะกับคำสั่งซื้อที่ยังไม่ชำระเงินเท่านั้น');
+  }
+  
+  // คำนวณราคาหลังหักส่วนลดโปรโมชั่น
+  const afterPromotionPrice = order.SubTotalPrice - (order.promotionDiscount || 0);
+  
+  try {
+    // ตรวจสอบความถูกต้องของคูปอง
+    const coupon = await this.couponsService.validateCoupon(
+      body.couponCode, 
+      afterPromotionPrice,
+      user.userId
+    );
+    
+    // คำนวณส่วนลด
+    const discountAmount = this.couponsService.calculateDiscount(coupon, afterPromotionPrice);
+    
+    return {
+      coupon: {
+        _id: coupon._id,
+        code: coupon.code,
+        discountPercent: coupon.discountPercent,
+        description: coupon.description
+      },
+      discountAmount
+    };
+  } catch (error) {
+    throw new BadRequestException(error.message);
+  }
+}
 
+
+@Post(':id/apply-coupon')
+@UseGuards(JwtAuthGuard)
+async applyOrderCoupon(
+  @Param('id') id: string,
+  @Body() body: { couponCode: string },
+  @User() user
+) {
+  const order = await this.ordersService.findOne(id);
+  
+  // ตรวจสอบสิทธิ์
+  if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+    throw new ForbiddenException('You do not have permission to use coupon with this order');
+  }
+  
+  // ตรวจสอบว่าคำสั่งซื้ออยู่ในสถานะที่ยังไม่ชำระเงิน
+  if (order.OrderStatus !== 'awaiting_payment') {
+    throw new BadRequestException('คูปองสามารถใช้ได้เฉพาะกับคำสั่งซื้อที่ยังไม่ชำระเงินเท่านั้น');
+  }
+  
+  // คำนวณราคาหลังหักส่วนลดโปรโมชั่น
+  const afterPromotionPrice = order.SubTotalPrice - (order.promotionDiscount || 0);
+  
+  try {
+    // ตรวจสอบความถูกต้องของคูปอง
+    const coupon = await this.couponsService.validateCoupon(
+      body.couponCode, 
+      afterPromotionPrice,
+      user.userId
+    );
+    
+    // คำนวณส่วนลด
+    const discountAmount = this.couponsService.calculateDiscount(coupon, afterPromotionPrice);
+    
+    // มาร์คคูปองว่าถูกใช้แล้ว
+    await this.couponsService.markAsUsed(coupon._id.toString(), id);
+    
+    // อัปเดตคำสั่งซื้อ
+    const newTotalPrice = order.TotalPrice - discountAmount;
+    
+    const updatedOrder = await this.orderModel.findByIdAndUpdate(
+      id,
+      { 
+        coupon: coupon._id,
+        couponDiscount: discountAmount,
+        TotalPrice: newTotalPrice
+      },
+      { new: true }
+    )
+    .populate('candidates')
+    .populate('user')
+    .populate('payment')
+    .exec();
+    
+    if (!updatedOrder) {
+      throw new NotFoundException(`Order with ID ${id} not found after update`);
+    }
+    
+    return {
+      coupon: {
+        _id: coupon._id,
+        code: coupon.code,
+        discountPercent: coupon.discountPercent,
+        description: coupon.description
+      },
+      discountAmount,
+      order: updatedOrder
+    };
+  } catch (error) {
+    throw new BadRequestException(error.message);
+  }
+}
+@Post(':id/apply-coupon-by-code')
+@UseGuards(JwtAuthGuard)
+async applyOrderCouponByCode(
+  @Param('id') id: string,
+  @Body() body: { code: string },
+  @User() user
+) {
+  const order = await this.ordersService.findOne(id);
+  
+  // ตรวจสอบสิทธิ์
+  if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+    throw new ForbiddenException('You do not have permission to use coupon with this order');
+  }
+  
+  // ตรวจสอบว่าคำสั่งซื้ออยู่ในสถานะที่ยังไม่ชำระเงิน
+  if (order.OrderStatus !== 'awaiting_payment') {
+    throw new BadRequestException('คูปองสามารถใช้ได้เฉพาะกับคำสั่งซื้อที่ยังไม่ชำระเงินเท่านั้น');
+  }
+  
+  // คำนวณราคาหลังหักส่วนลดโปรโมชั่น
+  const afterPromotionPrice = order.SubTotalPrice - (order.promotionDiscount || 0);
+  
+  try {
+    // ตรวจสอบความถูกต้องของคูปองด้วยโค้ดโดยตรง
+    const coupon = await this.couponsService.validateCoupon(
+      body.code, 
+      afterPromotionPrice,
+      user.userId
+    );
+    
+    // คำนวณส่วนลด
+    const discountAmount = this.couponsService.calculateDiscount(coupon, afterPromotionPrice);
+    
+    // มาร์คคูปองว่าถูกใช้แล้ว
+    await this.couponsService.markAsUsed(coupon._id.toString(), id);
+    
+    // อัปเดตคำสั่งซื้อ
+    const newTotalPrice = order.TotalPrice - discountAmount;
+    
+    const updatedOrder = await this.orderModel.findByIdAndUpdate(
+      id,
+      { 
+        coupon: coupon._id,
+        couponDiscount: discountAmount,
+        TotalPrice: newTotalPrice
+      },
+      { new: true }
+    )
+    .populate('candidates')
+    .populate('user')
+    .populate('payment')
+    .exec();
+    
+    if (!updatedOrder) {
+      throw new NotFoundException(`Order with ID ${id} not found after update`);
+    }
+    
+    return {
+      coupon: {
+        _id: coupon._id,
+        code: coupon.code,
+        discountPercent: coupon.discountPercent,
+        description: coupon.description
+      },
+      discountAmount,
+      order: updatedOrder
+    };
+  } catch (error) {
+    throw new BadRequestException(error.message);
+  }
+}
+  // เพิ่มเมธอดสำหรับยกเลิกการใช้คูปอง
+  @Delete(':id/coupon')
+  @UseGuards(JwtAuthGuard)
+  async removeOrderCoupon(
+    @Param('id') id: string,
+    @User() user
+  ) {
+    const order = await this.ordersService.findOne(id);
+    
+    // ตรวจสอบสิทธิ์
+    if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+      throw new ForbiddenException('You do not have permission to remove coupon from this order');
+    }
+    
+    // ตรวจสอบว่าคำสั่งซื้ออยู่ในสถานะที่ยังไม่ชำระเงิน
+    if (order.OrderStatus !== 'awaiting_payment') {
+      throw new BadRequestException('สามารถยกเลิกคูปองได้เฉพาะกับคำสั่งซื้อที่ยังไม่ชำระเงินเท่านั้น');
+    }
+    
+    // ตรวจสอบว่ามีคูปองหรือไม่
+    if (!order.coupon) {
+      throw new BadRequestException('คำสั่งซื้อนี้ไม่ได้ใช้คูปอง');
+    }
+    
+    // อัปเดตคำสั่งซื้อ
+    const newTotalPrice = order.TotalPrice + order.couponDiscount;
+    
+    const updatedOrder = await this.orderModel.findByIdAndUpdate(
+      id,
+      { 
+        coupon: null,
+        couponDiscount: 0,
+        TotalPrice: newTotalPrice
+      },
+      { new: true }
+    )
+    .populate('candidates')
+    .populate('user')
+    .populate('payment')
+    .exec();
+    
+    if (!updatedOrder) {
+      throw new NotFoundException(`Order with ID ${id} not found after update`);
+    }
+    
+    return updatedOrder;
+  }
   
 }

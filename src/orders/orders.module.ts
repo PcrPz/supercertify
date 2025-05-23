@@ -5,6 +5,7 @@ import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { Order, OrderSchema } from './schemas/order.schema';
 import { CandidatesModule } from '../candidates/candidates.module';
+import { CouponsModule } from 'src/coupons/coupons.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { CandidatesModule } from '../candidates/candidates.module';
       { name: Order.name, schema: OrderSchema },
     ]),
     forwardRef(() => CandidatesModule), // ใช้ forwardRef เพื่อแก้ปัญหา circular dependency
+    CouponsModule
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

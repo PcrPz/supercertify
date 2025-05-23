@@ -1,47 +1,126 @@
+// src/orders/orders.service.ts - แก้ไข TypeScript errors
+
 import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model} from 'mongoose';
+import { Types } from 'mongoose';
 import { Order, OrderDocument } from './schemas/order.schema';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CandidatesService } from '../candidates/candidates.service';
+import { CouponsService } from '../coupons/coupons.service';
+import { Coupon } from '../coupons/schemas/coupon.schema'; // ✅ เพิ่ม import
 
 @Injectable()
 export class OrdersService {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @Inject(forwardRef(() => CandidatesService)) private candidatesService: CandidatesService,
+    private readonly couponsService: CouponsService,
   ) {}
 
-  async create(createOrderDto: CreateOrderDto, userId?: string): Promise<Order> {
-    // 1. Create candidates
-    const createdCandidates = await Promise.all(
-      createOrderDto.candidates.map(candidateDto => 
-        this.candidatesService.create(candidateDto)
-      )
-    );
+async create(createOrderDto: CreateOrderDto, userId?: string): Promise<Order> {
+  // ✅ แก้ไข type declaration
+  let couponId: any | null = null;
+  let couponDiscount = 0;
+  let validatedCoupon: Coupon | null = null; // ✅ ระบุ type ชัดเจน
   
-    // 2. Create order
-    const newOrder = new this.orderModel({
-      OrderType: createOrderDto.OrderType,
-      OrderStatus: 'awaiting_payment', // Initial status
-      TrackingNumber: this.generateTrackingNumber(),
-      user: userId,
-      candidates: createdCandidates.map(candidate => candidate._id),
-      TotalPrice: createOrderDto.totalPrice,
-      SubTotalPrice: createOrderDto.subtotalPrice,
-      // Add services to order
-      services: createOrderDto.services.map(service => ({
-        service: service.service,
-        title: service.title,
-        quantity: service.quantity,
-        price: service.price
-      })),
-      payment: null // Initialize with no payment
-    });
-  
-    return newOrder.save();
+  if (createOrderDto.couponCode) {
+    try {
+      console.log('🔍 Processing coupon in order creation:', createOrderDto.couponCode);
+      
+      // คำนวณราคาหลังหักส่วนลดโปรโมชั่น
+      const subtotal = createOrderDto.subtotalPrice;
+      const promotionDiscount = createOrderDto.promotionDiscount || 0;
+      const afterPromotionPrice = subtotal - promotionDiscount;
+      
+      console.log('💰 Order pricing:', {
+        subtotal,
+        promotionDiscount,
+        afterPromotionPrice,
+        couponCode: createOrderDto.couponCode
+      });
+      
+      // ✅ validateCoupon จะ return Coupon object หรือ throw error
+      validatedCoupon = await this.couponsService.validateCoupon(
+        createOrderDto.couponCode, 
+        afterPromotionPrice,
+        userId
+      );
+      
+      // ✅ เพิ่ม null check
+      if (validatedCoupon) {
+        console.log('✅ Coupon validated successfully:', {
+          id: validatedCoupon._id,
+          code: validatedCoupon.code,
+          discountPercent: validatedCoupon.discountPercent
+        });
+        
+        // คำนวณส่วนลดจากคูปอง
+        couponDiscount = this.couponsService.calculateDiscount(validatedCoupon, afterPromotionPrice);
+        
+        console.log('💵 Calculated coupon discount:', couponDiscount);
+        
+        // เก็บ coupon ID สำหรับบันทึกใน Order
+        couponId = validatedCoupon._id;
+      }
+      
+    } catch (error) {
+      console.error('❌ Error validating coupon during order creation:', error);
+      // ถ้าเกิดข้อผิดพลาดในการตรวจสอบคูปอง ให้ throw error แทนที่จะข้าม
+      throw new BadRequestException(`ไม่สามารถใช้คูปอง: ${error.message}`);
+    }
   }
 
+  // 1. Create candidates
+  const createdCandidates = await Promise.all(
+    createOrderDto.candidates.map(candidateDto => 
+      this.candidatesService.create(candidateDto)
+    )
+  );
+
+  // 2. Create order
+  const newOrder = new this.orderModel({
+    OrderType: createOrderDto.OrderType,
+    OrderStatus: 'awaiting_payment',
+    TrackingNumber: this.generateTrackingNumber(),
+    user: userId,
+    candidates: createdCandidates.map(candidate => candidate._id),
+    SubTotalPrice: createOrderDto.subtotalPrice,
+    promotionDiscount: createOrderDto.promotionDiscount || 0,
+    couponDiscount: couponDiscount,
+    TotalPrice: createOrderDto.totalPrice,
+    services: createOrderDto.services.map(service => ({
+      service: service.service,
+      title: service.title,
+      quantity: service.quantity,
+      price: service.price
+    })),
+    payment: null,
+    coupon: couponId
+  });
+
+  // บันทึก Order ก่อน
+  const savedOrder = await newOrder.save();
+  
+  // ✅ ถ้ามีคูปอง ให้ mark ว่าใช้แล้วหลังจากสร้าง Order สำเร็จ
+  if (validatedCoupon && savedOrder) {
+    try {
+      console.log('📝 Marking coupon as used:', validatedCoupon._id);
+      await this.couponsService.markAsUsed(
+        validatedCoupon._id.toString(), 
+        savedOrder._id.toString()
+      );
+      console.log('✅ Coupon marked as used successfully');
+    } catch (markError) {
+      console.error('❌ Error marking coupon as used:', markError);
+      // ถึงแม้จะ mark coupon ไม่สำเร็จ แต่ Order ยังคงถูกสร้างแล้ว
+    }
+  }
+
+  return savedOrder;
+}
+
+  // ฟังก์ชันอื่นๆ คงเดิม...
   async findAll(): Promise<Order[]> {
     return this.orderModel.find()
       .populate('candidates')
@@ -72,15 +151,12 @@ export class OrdersService {
   }
 
   async updateOrderStatus(id: string, status: string): Promise<Order> {
-    // Define valid order statuses
     const validStatuses = ['awaiting_payment', 'pending_verification', 'payment_verified', 'processing', 'completed', 'cancelled'];
     
-    // Validate status
     if (!validStatuses.includes(status)) {
       throw new BadRequestException(`Invalid order status. Must be one of: ${validStatuses.join(', ')}`);
     }
     
-    // Update order status
     const updatedOrder = await this.orderModel
       .findByIdAndUpdate(
         id, 
@@ -92,7 +168,6 @@ export class OrdersService {
       .populate('payment')
       .exec();
     
-    // Check if order exists
     if (!updatedOrder) {
       throw new NotFoundException(`Order with ID ${id} not found`);
     }
@@ -100,36 +175,68 @@ export class OrdersService {
     return updatedOrder;
   }
 
-  async deleteOrder(id: string): Promise<any> {
-    // ตรวจสอบว่า order นี้มีอยู่จริงหรือไม่
-    const order = await this.orderModel.findById(id).exec();
-    if (!order) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
-    }
-    
-    // ลบข้อมูล candidates ที่เกี่ยวข้อง
-    if (order.candidates && order.candidates.length > 0) {
-      try {
-        await Promise.all(
-          order.candidates.map(candidateId => 
-            this.candidatesService.remove(candidateId.toString())
-          )
-        );
-      } catch (error) {
-        console.error('Error deleting candidates:', error);
-        // ไม่ throw error ในกรณีนี้ เพื่อให้สามารถลบ order ได้แม้ว่าจะลบ candidates ไม่สำเร็จ
-      }
-    }
-    
-    // ลบข้อมูล order
-    const result = await this.orderModel.findByIdAndDelete(id).exec();
-    
-    return {
-      success: true,
-      message: 'Order deleted successfully',
-      deletedOrder: result
-    };
+async deleteOrder(id: string): Promise<any> {
+  console.log('🗑️ Starting order deletion process:', id);
+  
+  // ตรวจสอบว่า order นี้มีอยู่จริงหรือไม่
+  const order = await this.orderModel.findById(id).exec();
+  if (!order) {
+    throw new NotFoundException(`Order with ID ${id} not found`);
   }
+  
+  console.log('📋 Order found:', {
+    id: order._id,
+    status: order.OrderStatus,
+    hasCoupon: !!order.coupon,
+    couponId: order.coupon
+  });
+  
+  // ✅ Step 1: Release coupon ก่อน (ถ้ามี)
+  if (order.coupon) {
+    console.log('🎫 Order has coupon, releasing it...');
+    try {
+      await this.couponsService.releaseCoupon(id);
+    } catch (couponError) {
+      console.error('❌ Error releasing coupon, but continuing with order deletion:', couponError);
+      // ไม่ stop การลบ Order แม้ว่า coupon release จะล้มเหลว
+    }
+  } else {
+    console.log('ℹ️ Order has no coupon to release');
+  }
+  
+  // ✅ Step 2: Delete candidates
+  if (order.candidates && order.candidates.length > 0) {
+    console.log(`👥 Deleting ${order.candidates.length} candidates...`);
+    try {
+      await Promise.all(
+        order.candidates.map(candidateId => 
+          this.candidatesService.remove(candidateId.toString())
+        )
+      );
+      console.log('✅ All candidates deleted successfully');
+    } catch (error) {
+      console.error('❌ Error deleting candidates:', error);
+      // ไม่ stop การลบ Order
+    }
+  }
+  
+  // ✅ Step 3: Delete order
+  console.log('🗑️ Deleting order...');
+  const result = await this.orderModel.findByIdAndDelete(id).exec();
+  
+  if (!result) {
+    throw new NotFoundException(`Order with ID ${id} not found during deletion`);
+  }
+  
+  console.log('✅ Order deleted successfully:', id);
+  
+  return {
+    success: true,
+    message: 'Order deleted successfully',
+    deletedOrder: result,
+    couponReleased: !!order.coupon
+  };
+}
 
   async findByTrackingNumber(trackingNumber: string): Promise<Order> {
     const order = await this.orderModel.findOne({ TrackingNumber: trackingNumber })

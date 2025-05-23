@@ -1,5 +1,5 @@
 // src/orders/dto/create-order.dto.ts
-import { IsEnum, IsNotEmpty, IsNumber, IsString, IsArray, ValidateNested } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsString, IsArray, ValidateNested, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateCandidateDto } from '../../candidates/dto/create-candidate.dto';
 
@@ -39,6 +39,14 @@ export class CreateOrderDto {
   @IsNotEmpty()
   @IsNumber()
   totalPrice: number;
+
+  @IsOptional()
+  @IsNumber()
+  promotionDiscount?: number;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string; // ✅ ต้องมี field นี้
 
   @IsNotEmpty()
   @IsArray()
