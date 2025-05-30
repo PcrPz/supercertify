@@ -1,12 +1,14 @@
 // src/services/dto/create-service.dto.ts
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested, IsBoolean } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested, IsBoolean, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class RequiredDocumentDto {
   @IsString()
+  @IsNotEmpty()
   document_id: string;
   
   @IsString()
+  @IsNotEmpty()
   document_name: string;
   
   @IsBoolean()
@@ -43,9 +45,10 @@ export class CreateServiceDto {
   @IsString({ each: true })
   List_File?: string[];
   
-  @IsOptional()
+  @IsNotEmpty() // เพิ่ม validation ว่าจำเป็นต้องมี
   @IsArray()
+  @ArrayMinSize(1) // ต้องมีอย่างน้อย 1 รายการ
   @ValidateNested({ each: true })
   @Type(() => RequiredDocumentDto)
-  RequiredDocuments?: RequiredDocumentDto[];
+  RequiredDocuments: RequiredDocumentDto[];
 }

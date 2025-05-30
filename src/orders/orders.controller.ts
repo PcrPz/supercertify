@@ -71,6 +71,29 @@ export class OrdersController {
     return ordersWithStatus;
   }
 
+
+  @Get('count-by-user')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  async getOrderCountByUser() {
+    try {
+      const orders = await this.ordersService.findAll();
+      
+      // นับจำนวนคำสั่งซื้อตามผู้ใช้
+      const orderCountByUser = {};
+      orders.forEach(order => {
+        if (order.user && order.user._id) {
+          const userId = order.user._id.toString();
+          orderCountByUser[userId] = (orderCountByUser[userId] || 0) + 1;
+        }
+      });
+      
+      return orderCountByUser;
+    } catch (error) {
+      console.error('Error counting orders by user:', error);
+      throw new BadRequestException('ไม่สามารถนับจำนวนคำสั่งซื้อได้');
+    }
+  }
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async findOne(@Param('id') id: string, @User() user): Promise<Order> {
@@ -426,5 +449,5 @@ async applyOrderCouponByCode(
     
     return updatedOrder;
   }
-  
+    
 }
