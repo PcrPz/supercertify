@@ -62,6 +62,23 @@ export class UsersService {
     ).exec();
   }
 
+    async deleteUser(userId: string): Promise<boolean> {
+    try {
+      // ลบผู้ใช้จากฐานข้อมูล
+      const result = await this.userModel.findByIdAndDelete(userId).exec();
+      
+      // ถ้าไม่พบผู้ใช้ที่ต้องการลบ
+      if (!result) {
+        throw new NotFoundException('User not found');
+      }
+      
+      return true;
+    } catch (error) {
+      // ถ้าเกิด error ให้ส่งต่อไปให้ controller จัดการ
+      throw error;
+    }
+  }
+
     async updateProfilePicture(userId: string, profilePicture: string | null): Promise<UserDocument | null> {
       return this.userModel.findByIdAndUpdate(
         userId,

@@ -527,4 +527,88 @@ export class UsersController {
       };
     }
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Delete(':id')
+  async deleteUser(
+    @Param('id') id: string,
+    @User() user
+  ) {
+    try {
+      // ป้องกันไม่ให้ admin ลบตัวเอง
+      if (id === user.userId) {
+        return {
+          success: false,
+          statusCode: HttpStatus.FORBIDDEN,
+          errorCode: 'CANNOT_DELETE_SELF',
+          message: 'ไม่สามารถลบบัญชีของตัวเองได้'
+        };
+      }
+      
+      // ตรวจสอบว่าผู้ใช้เป็น admin หรือไม่ (เพิ่มความมั่นใจอีกชั้น)
+      if (!user.roles.includes(Role.Admin)) {
+        return {
+          success: false,
+          statusCode: HttpStatus.FORBIDDEN,
+          errorCode: 'ADMIN_REQUIRED',
+          message: 'เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถลบผู้ใช้ได้'
+        };
+      }
+      
+      // ดึงข้อมูลผู้ใช้ก่อนลบ (เพื่อตรวจสอบรูปโปรไฟล์)
+      const userToDelete = await this.usersService.findById(id);
+      
+      if (!userToDelete) {
+        return {
+          success: false,
+          statusCode: HttpStatus.NOT_FOUND,
+          errorCode: 'USER_NOT_FOUND',
+          message: 'ไม่พบข้อมูลผู้ใช้'
+        };
+      }
+      
+      // ถ้ามีรูปโปรไฟล์ ให้ลบไฟล์ด้วย
+      if (userToDelete.profilePicture) {
+        try {
+          // แยก filename จาก URL
+          const url = new URL(userToDelete.profilePicture);
+          const pathParts = url.pathname.split('/');
+          const filename = pathParts[pathParts.length - 1];
+          
+          // ลบไฟล์จาก MinIO
+          await this.filesService.deleteFile(`profiles/${filename}`);
+        } catch (error) {
+          console.error('Failed to delete profile picture file:', error);
+          // ไม่ throw error เพื่อให้สามารถลบข้อมูลในฐานข้อมูลได้ต่อ
+        }
+      }
+      
+      // ลบผู้ใช้
+      await this.usersService.deleteUser(id);
+      
+      return {
+        success: true,
+        message: 'ลบผู้ใช้เรียบร้อยแล้ว'
+      };
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      
+      if (error instanceof NotFoundException) {
+        return {
+          success: false,
+          statusCode: HttpStatus.NOT_FOUND,
+          errorCode: 'USER_NOT_FOUND',
+          message: 'ไม่พบข้อมูลผู้ใช้'
+        };
+      }
+      
+      return {
+        success: false,
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorCode: 'DELETE_USER_FAILED',
+        message: 'เกิดข้อผิดพลาดในการลบผู้ใช้ กรุณาลองใหม่อีกครั้ง'
+      };
+    }
+  }
 }
