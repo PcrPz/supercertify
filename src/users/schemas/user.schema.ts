@@ -41,6 +41,9 @@ export class User {
   
   @Prop({ type: String, enum: ['user', 'admin'], default: 'user' })
   role: string;
+
+  @Prop({ default: null })
+  profilePicture: string; // เก็บ URL ของรูปโปรไฟล์
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
