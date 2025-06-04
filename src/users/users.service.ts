@@ -190,4 +190,37 @@ export class UsersService {
       throw error;
     }
   }
+
+  async setRefreshToken(userId: string, refreshToken: string, expiresIn: number): Promise<UserDocument | null> {
+    // คำนวณวันหมดอายุ
+    const refreshTokenExp = new Date();
+    refreshTokenExp.setSeconds(refreshTokenExp.getSeconds() + expiresIn);
+
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { 
+        refreshToken,
+        refreshTokenExp 
+      },
+      { new: true }
+    ).exec();
+  }
+
+  async clearRefreshToken(userId: string): Promise<UserDocument | null> {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { 
+        refreshToken: null,
+        refreshTokenExp: null 
+      },
+      { new: true }
+    ).exec();
+  }
+
+  async findByRefreshToken(refreshToken: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ 
+      refreshToken,
+      refreshTokenExp: { $gt: new Date() } // ตรวจสอบว่ายังไม่หมดอายุ
+    }).exec();
+  }
 }

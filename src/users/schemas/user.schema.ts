@@ -44,6 +44,12 @@ export class User {
 
   @Prop({ default: null })
   profilePicture: string; // เก็บ URL ของรูปโปรไฟล์
+
+  @Prop({ default: null })
+  refreshToken: string;
+
+  @Prop({ default: null })
+  refreshTokenExp: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
