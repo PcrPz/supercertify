@@ -189,6 +189,13 @@ export class OrdersController {
     return this.ordersService.updateOrderStatus(id, 'processing');
   }
 
+  @Get('user/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  findUserOrders(@Param('userId') userId: string): Promise<Order[]> {
+    return this.ordersService.findByUserId(userId);
+  }
+  
   @Get('track/:trackingNumber')
   async findByTrackingNumber(@Param('trackingNumber') trackingNumber: string): Promise<Order> {
     return this.ordersService.findByTrackingNumber(trackingNumber);

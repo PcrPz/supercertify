@@ -87,7 +87,65 @@ export class UsersService {
       ).exec();
     }
   
-  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<UserDocument | null> {
+    async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<UserDocument | null> {
+      try {
+        const user = await this.userModel.findById(userId);
+        
+        if (!user) {
+          throw new NotFoundException('User not found');
+        }
+        
+        // ตรวจสอบว่ามีการส่งข้อมูล email มาหรือไม่ (ป้องกันเพิ่มเติม)
+        if ('email' in updateProfileDto) {
+          // ลบฟิลด์ email ออกเพื่อไม่ให้มีการอัปเดต
+          delete updateProfileDto['email'];
+        }
+        
+        // ตรวจสอบว่ามีการส่ง username มาหรือไม่ และตรวจสอบความซ้ำซ้อน
+        if (updateProfileDto.username && updateProfileDto.username !== user.username) {
+          const existingUser = await this.userModel.findOne({ 
+            username: updateProfileDto.username,
+            _id: { $ne: userId } // ไม่นับตัวผู้ใช้เอง
+          });
+          
+          if (existingUser) {
+            throw new ConflictException('Username already exists');
+          }
+        }
+        
+        // จัดการกับการเปลี่ยนรหัสผ่าน
+        if (updateProfileDto.currentPassword && updateProfileDto.newPassword) {
+          const isPasswordValid = await user.comparePassword(updateProfileDto.currentPassword);
+          
+          if (!isPasswordValid) {
+            throw new UnauthorizedException('Current password is incorrect');
+          }
+          
+          // รหัสผ่านจะถูกเข้ารหัสโดยอัตโนมัติด้วย pre-save hook
+          user.password = updateProfileDto.newPassword;
+          await user.save();
+          
+          // ลบรหัสผ่านออกจาก DTO เพื่อไม่ให้ถูกอัปเดตซ้ำ
+          delete updateProfileDto.currentPassword;
+          delete updateProfileDto.newPassword;
+        } else if (
+          (updateProfileDto.currentPassword && !updateProfileDto.newPassword) ||
+          (!updateProfileDto.currentPassword && updateProfileDto.newPassword)
+        ) {
+          throw new BadRequestException('Both current password and new password are required to change password');
+        }
+        
+        // อัปเดตข้อมูลอื่นๆ (ยกเว้น email)
+        return this.userModel.findByIdAndUpdate(
+          userId,
+          { $set: updateProfileDto },
+          { new: true }
+        ).exec();
+      } catch (error) {
+        throw error;
+      }
+    }
+    async updateProfileByAdmin(userId: string, updateProfileDto: UpdateProfileDto): Promise<UserDocument | null> {
     try {
       const user = await this.userModel.findById(userId);
       
@@ -95,9 +153,8 @@ export class UsersService {
         throw new NotFoundException('User not found');
       }
       
-      // ตรวจสอบว่ามีการส่งข้อมูล email มาหรือไม่ (ป้องกันเพิ่มเติม)
+      // ป้องกันการแก้ไขอีเมล
       if ('email' in updateProfileDto) {
-        // ลบฟิลด์ email ออกเพื่อไม่ให้มีการอัปเดต
         delete updateProfileDto['email'];
       }
       
@@ -113,29 +170,17 @@ export class UsersService {
         }
       }
       
-      // จัดการกับการเปลี่ยนรหัสผ่าน
-      if (updateProfileDto.currentPassword && updateProfileDto.newPassword) {
-        const isPasswordValid = await user.comparePassword(updateProfileDto.currentPassword);
-        
-        if (!isPasswordValid) {
-          throw new UnauthorizedException('Current password is incorrect');
-        }
-        
-        // รหัสผ่านจะถูกเข้ารหัสโดยอัตโนมัติด้วย pre-save hook
+      // จัดการการเปลี่ยนรหัสผ่านโดย admin
+      if (updateProfileDto.newPassword) {
+        // ตั้งรหัสผ่านใหม่โดยตรง
         user.password = updateProfileDto.newPassword;
         await user.save();
         
         // ลบรหัสผ่านออกจาก DTO เพื่อไม่ให้ถูกอัปเดตซ้ำ
-        delete updateProfileDto.currentPassword;
         delete updateProfileDto.newPassword;
-      } else if (
-        (updateProfileDto.currentPassword && !updateProfileDto.newPassword) ||
-        (!updateProfileDto.currentPassword && updateProfileDto.newPassword)
-      ) {
-        throw new BadRequestException('Both current password and new password are required to change password');
       }
       
-      // อัปเดตข้อมูลอื่นๆ (ยกเว้น email)
+      // อัปเดตข้อมูลอื่นๆ
       return this.userModel.findByIdAndUpdate(
         userId,
         { $set: updateProfileDto },
