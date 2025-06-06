@@ -1,4 +1,4 @@
-// src/payments/payments.controller.ts
+// src/payments/payments.controller.ts - Fixed Version
 import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Request, ForbiddenException, NotFoundException,BadRequestException ,UseInterceptors, UploadedFile  } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -12,16 +12,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { FilesService } from '../files/files.service'; // เพิ่ม import
+import { FilesService } from '../files/files.service';
 import { User } from 'src/decorators/user.decorator';
-
 
 @Controller('api/payments')
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
-    private readonly filesService: FilesService, // เพิ่ม FilesService
+    private readonly filesService: FilesService,
   ) {}
 
   @Post()
@@ -40,7 +39,7 @@ export class PaymentsController {
     
     // ตรวจสอบสิทธิ์
     const orderUserId = order.user ? order.user.toString() : null;
-    if ( !user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+    if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
       throw new ForbiddenException('You do not have permission to create payment for this order');
     }
     
@@ -53,24 +52,45 @@ export class PaymentsController {
         date: body['transferInfo.date'],
         amount: body['transferInfo.amount'],
         reference: body['transferInfo.reference'],
-        receiptUrl: undefined // เปลี่ยนจาก null เป็น undefined
+        receiptUrl: undefined
       }
     };
     
-    // จัดการการอัปโหลดไฟล์
+    // ✅ จัดการการอัปโหลดไฟล์ - แก้ไขแล้ว
     if (receipt) {
       try {
-        const uploadResult = await this.filesService.uploadFile(receipt);
-        const receiptUrl = await this.filesService.getFile(uploadResult.filename);
+        console.log('📁 Uploading receipt file:', {
+          originalname: receipt.originalname,
+          mimetype: receipt.mimetype,
+          size: receipt.size
+        });
         
-        // ตรวจสอบว่า transferInfo มีค่าก่อนที่จะใช้งาน
-        if (createPaymentDto.transferInfo) { // เพิ่มการตรวจสอบ
+        // ✅ ระบุ folder สำหรับ receipt
+        const uploadResult = await this.filesService.uploadFile(receipt, 'receipts');
+        
+        console.log('✅ Upload result:', {
+          filename: uploadResult.filename,
+          url: uploadResult.url,
+          etag: uploadResult.etag
+        });
+        
+        // ✅ ใช้ URL จาก uploadResult แทน
+        const receiptUrl = uploadResult.url;
+        
+        console.log('🔗 Final receipt URL:', receiptUrl);
+        
+        if (createPaymentDto.transferInfo) {
           createPaymentDto.transferInfo.receiptUrl = receiptUrl;
         }
       } catch (error) {
-        console.error('Failed to upload receipt:', error);
+        console.error('❌ Failed to upload receipt:', error);
+        // ถ้าอัปโหลดไม่ได้ ให้ continue ต่อไปโดยไม่มี receipt
       }
+    } else {
+      console.log('⚠️ No receipt file provided');
     }
+    
+    console.log('💾 Creating payment with data:', createPaymentDto);
     
     // สร้างการชำระเงินในฐานข้อมูล
     return this.paymentsService.create(createPaymentDto, user.userId);
@@ -96,10 +116,8 @@ export class PaymentsController {
       throw new NotFoundException('Associated order not found');
     }
     
-    // Safe navigation - check if user exists and convert to string
     const orderUserId = order.user ? order.user.toString() : null;
     
-    // Check permissions
     if (req.user.role !== Role.Admin && orderUserId !== req.user.userId) {
       throw new ForbiddenException('You do not have permission to view this payment');
     }
@@ -113,13 +131,11 @@ export class PaymentsController {
     @Param('orderId') orderId: string,
     @Request() req
   ): Promise<Payment[]> {
-    // Check permissions
     const order = await this.orderModel.findById(orderId);
     if (!order) {
       throw new NotFoundException('Order not found');
     }
     
-    // Safe navigation - check if user exists and convert to string
     const orderUserId = order.user ? order.user.toString() : null;
     
     if (req.user.role !== Role.Admin && orderUserId !== req.user.userId) {
@@ -143,10 +159,8 @@ export class PaymentsController {
       throw new NotFoundException('Associated order not found');
     }
     
-    // Safe navigation - check if user exists and convert to string
     const orderUserId = order.user ? order.user.toString() : null;
     
-    // Check permissions
     if (req.user.role !== Role.Admin && orderUserId !== req.user.userId) {
       throw new ForbiddenException('You do not have permission to update this payment');
     }

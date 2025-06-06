@@ -1,4 +1,4 @@
-// src/documents/documents.service.ts
+// src/documents/documents.service.ts - แก้ไขเต็มๆ
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Schema as MongooseSchema } from 'mongoose';
@@ -21,14 +21,108 @@ interface MissingDocument {
 
 @Injectable()
 export class DocumentsService {
-    constructor(
-        @InjectModel(DocumentFile.name) private documentModel: Model<DocumentDocument>,
-        private filesService: FilesService,
-        private candidatesService: CandidatesService,
-        private servicesService: ServicesService  // <-- ต้องการตัวนี้
-      ) {}
+  constructor(
+    @InjectModel(DocumentFile.name) private documentModel: Model<DocumentDocument>,
+    private filesService: FilesService,
+    private candidatesService: CandidatesService,
+    private servicesService: ServicesService
+  ) {}
+
+  // ✅ เพิ่ม normalizeDocumentType function ที่หายไป
+  private normalizeDocumentType(documentType: string): string {
+    const typeMapping: { [key: string]: string } = {
+      // National ID variations  
+      'copy_of_national_id_card_social': 'national_id',
+      'copy_of_national_id_card': 'national_id',
+      'national_id_card_social': 'national_id',
+      'national_id_card': 'national_id',
+      'id_card_social': 'national_id',
+      'id_card': 'national_id',
+      
+      // Passport variations
+      'copy_of_passport': 'passport',
+      'passport_copy': 'passport',
+      'passport': 'passport',
+      
+      // Criminal check variations
+      'criminal_background_check': 'criminal_check',
+      'criminal_record_check': 'criminal_check',
+      'criminal_check': 'criminal_check',
+      'criminal_record': 'criminal_check',
+      'background_check': 'criminal_check',
+      
+      // Education variations
+      'education_verification': 'education_verify',
+      'education_certificate': 'education_verify',
+      'education_verify': 'education_verify',
+      'education_check': 'education_verify',
+      'education_degree': 'education_verify',
+      
+      // Work permit variations
+      'work_permit_copy': 'work_permit',
+      'work_permit': 'work_permit',
+      'employment_permit': 'work_permit',
+      
+      // House registration variations
+      'house_registration_copy': 'house_registration',
+      'house_registration': 'house_registration',
+      'address_registration': 'house_registration',
+      'residence_registration': 'house_registration'
+    };
+    
+    // ลองหาใน mapping ก่อน (ตรงตัว)
+    if (typeMapping[documentType.toLowerCase()]) {
+      return typeMapping[documentType.toLowerCase()];
+    }
+    
+    // ถ้าไม่เจอ ให้ทำความสะอาดและหาอีกครั้ง
+    const cleanId = documentType.toLowerCase().replace(/[^a-z_]/g, '');
+    if (typeMapping[cleanId]) {
+      return typeMapping[cleanId];
+    }
+    
+    // ถ้ายังไม่เจอ ให้ทำความสะอาดและตัดให้สั้น
+    return documentType
+      .toLowerCase()
+      .replace(/[^a-z_]/g, '')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .substring(0, 20);
+  }
+
+  // ✅ Helper function สำหรับทำความสะอาดชื่อไฟล์ (เก็บ underscore)
+  private sanitizeFileName(name: string): string {
+    return name
+      .trim()
+      .replace(/[^a-zA-Z0-9ก-๙\s_]/g, '') // ✅ เก็บ underscore ด้วย
+      .replace(/\s+/g, '_') // แทนที่ช่องว่างด้วย _
+      .replace(/_+/g, '_') // แทนที่ __ หลายตัวด้วย _
+      .replace(/^_|_$/g, '') // ลบ _ ที่ขึ้นต้นและลงท้าย
+      .substring(0, 30); // เพิ่มกลับเป็น 30
+  }
+
+  // ✅ Helper function สำหรับสร้างชื่อไฟล์ที่สวย
+  private createBeautifulFileName(
+    candidate: any, 
+    documentType: string, 
+    originalFileName: string, 
+    index?: number
+  ): string {
+    const cleanCandidateName = this.sanitizeFileName(candidate.C_FullName);
+    const cleanDocumentType = this.sanitizeFileName(documentType); // ✅ เปลี่ยนกลับเป็น sanitizeFileName
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const uuid = randomUUID().split('-')[0]; // เอาแค่ 8 ตัวแรก
+    const fileExtension = originalFileName.split('.').pop()?.toLowerCase() || '';
+    
+    // ถ้ามีหลายไฟล์ ให้เพิ่มหมายเลข
+    const fileNumber = index !== undefined ? `_${index + 1}` : '';
+    
+    return `${cleanDocumentType}_${cleanCandidateName}_${timestamp}_${uuid}${fileNumber}.${fileExtension}`;
+  }
 
   async uploadDocument(file: Express.Multer.File, uploadDocumentDto: UploadDocumentDto): Promise<DocumentFile> {
+    console.log('📄 Starting document upload process...');
+    
     // 1. ตรวจสอบว่า Candidate มีอยู่จริง
     const candidate = await this.candidatesService.findOne(uploadDocumentDto.candidateId);
     if (!candidate) {
@@ -67,24 +161,49 @@ export class DocumentsService {
       );
     }
 
-    // 6. อัปโหลดไฟล์ไปยัง MinIO
-    const folder = `documents/${uploadDocumentDto.candidateId}/${uploadDocumentDto.serviceId}/${uploadDocumentDto.documentType}`;
-    const fileNameWithUUID = `${randomUUID()}-${file.originalname}`;
+    // ✅ 6. สร้างชื่อไฟล์ที่สวยและดูรู้เรื่อง
+    const beautifulFileName = this.createBeautifulFileName(
+      candidate, 
+      uploadDocumentDto.documentType, 
+      file.originalname
+    );
     
-    const uploadResult = await this.filesService.uploadFile(file, folder, fileNameWithUUID);
-    const fileUrl = await this.filesService.getFile(`${folder}/${fileNameWithUUID}`);
+    console.log('📄 Beautiful filename created:', beautifulFileName);
 
-    // 7. ตรวจสอบว่ามีเอกสารประเภทนี้อยู่แล้วหรือไม่
+    // 7. ตรวจสอบว่ามีเอกสารประเภทนี้อยู่แล้วหรือไม่ (ก่อนอัปโหลด)
     const existingDocument = await this.documentModel.findOne({
       candidate: uploadDocumentDto.candidateId,
       service: uploadDocumentDto.serviceId,
       Document_Type: uploadDocumentDto.documentType
     }).exec();
 
-    // ถ้ามีอยู่แล้ว ให้อัปเดต
+    // ✅ ลบไฟล์เก่าถ้ามี
+    if (existingDocument?.File_Path) {
+      try {
+        const oldUrlParts = existingDocument.File_Path.split('/static/');
+        if (oldUrlParts.length > 1) {
+          await this.filesService.deleteFile(oldUrlParts[1]);
+          console.log('🗑️ Deleted old document file');
+        }
+      } catch (error) {
+        console.error('Failed to delete old document file:', error);
+      }
+    }
+
+    // 8. อัปโหลดไฟล์ไปยัง MinIO
+    const folder = `documents/${uploadDocumentDto.candidateId}/${uploadDocumentDto.serviceId}/${uploadDocumentDto.documentType}`;
+    
+    const uploadResult = await this.filesService.uploadFile(file, folder, beautifulFileName);
+    const fileUrl = uploadResult.url; // ✅ ใช้จาก uploadResult
+    
+    console.log('✅ File uploaded successfully:', fileUrl);
+
+    // 9. บันทึก/อัปเดตข้อมูลเอกสาร
     if (existingDocument) {
+      // อัปเดตเอกสารที่มีอยู่
       existingDocument.File_Path = fileUrl;
-      existingDocument.File_Name = file.originalname;
+      existingDocument.File_Name = beautifulFileName; // ✅ ใช้ชื่อไฟล์ที่สวย
+      existingDocument.Original_Name = file.originalname; // ✅ เก็บชื่อเดิมไว้
       existingDocument.File_Type = file.mimetype;
       existingDocument.File_Size = file.size;
       existingDocument.isVerified = false;
@@ -92,102 +211,13 @@ export class DocumentsService {
       existingDocument.verifiedBy = null;
       
       return existingDocument.save();
-    }
-
-    // 8. บันทึกข้อมูลเอกสารลงในฐานข้อมูล
-    const documentFile = new this.documentModel({
-      File_ID: randomUUID(),
-      File_Path: fileUrl,
-      File_Name: file.originalname,
-      File_Type: file.mimetype,
-      File_Size: file.size,
-      Document_Type: uploadDocumentDto.documentType,
-      candidate: uploadDocumentDto.candidateId,
-      service: uploadDocumentDto.serviceId,
-      isVerified: uploadDocumentDto.isVerified || false
-    });
-
-    return documentFile.save();
-  }
-// เพิ่ม method นี้ในคลาส DocumentsService
-async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: UploadDocumentDto): Promise<DocumentFile[]> {
-  // 1. ตรวจสอบว่า Candidate มีอยู่จริง
-  const candidate = await this.candidatesService.findOne(uploadDocumentDto.candidateId);
-  if (!candidate) {
-    throw new NotFoundException(`Candidate with ID ${uploadDocumentDto.candidateId} not found`);
-  }
-
-  // 2. ตรวจสอบว่า Service มีอยู่จริง
-  const service = await this.servicesService.findOne(uploadDocumentDto.serviceId);
-  if (!service) {
-    throw new NotFoundException(`Service with ID ${uploadDocumentDto.serviceId} not found`);
-  }
-
-  // 3. ตรวจสอบว่าเอกสารประเภทนี้ถูกกำหนดให้ต้องใช้สำหรับ Service นี้หรือไม่
-  const requiredDocument = service.RequiredDocuments?.find(
-    doc => doc.document_id === uploadDocumentDto.documentType
-  );
-  
-  if (!requiredDocument) {
-    throw new BadRequestException(
-      `Document type "${uploadDocumentDto.documentType}" is not required for service "${service.Service_Title}"`
-    );
-  }
-
-  // 4. สร้าง array เพื่อเก็บผลลัพธ์
-  const uploadedDocuments: DocumentFile[] = [];
-
-  // 5. สร้างโฟลเดอร์สำหรับเก็บไฟล์
-  const folder = `documents/${uploadDocumentDto.candidateId}/${uploadDocumentDto.serviceId}/${uploadDocumentDto.documentType}`;
-
-  // 6. วนลูปแต่ละไฟล์
-  for (const file of files) {
-    // 6.1 ตรวจสอบประเภทไฟล์
-    const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || '';
-    if (!requiredDocument.file_types.includes(fileExtension)) {
-      throw new BadRequestException(
-        `File type "${fileExtension}" is not allowed. Allowed types: ${requiredDocument.file_types.join(', ')}`
-      );
-    }
-
-    // 6.2 ตรวจสอบขนาดไฟล์
-    if (requiredDocument.max_size && file.size > requiredDocument.max_size) {
-      throw new BadRequestException(
-        `File size (${file.size} bytes) exceeds the maximum allowed size (${requiredDocument.max_size} bytes)`
-      );
-    }
-
-    // 6.3 อัปโหลดไฟล์ไปยัง MinIO
-    const fileNameWithUUID = `${randomUUID()}-${file.originalname}`;
-    const uploadResult = await this.filesService.uploadFile(file, folder, fileNameWithUUID);
-    const fileUrl = await this.filesService.getFile(`${folder}/${fileNameWithUUID}`);
-
-    // 6.4 ตรวจสอบว่ามีเอกสารประเภทนี้อยู่แล้วหรือไม่
-    const existingDocument = await this.documentModel.findOne({
-      candidate: uploadDocumentDto.candidateId,
-      service: uploadDocumentDto.serviceId,
-      Document_Type: uploadDocumentDto.documentType
-    }).exec();
-
-    let document: DocumentFile;
-    
-    // 6.5 ถ้ามีอยู่แล้ว ให้อัปเดต
-    if (existingDocument) {
-      existingDocument.File_Path = fileUrl;
-      existingDocument.File_Name = file.originalname;
-      existingDocument.File_Type = file.mimetype;
-      existingDocument.File_Size = file.size;
-      existingDocument.isVerified = false;
-      existingDocument.verifiedAt = null;
-      existingDocument.verifiedBy = null;
-      
-      document = await existingDocument.save();
     } else {
-      // 6.6 สร้างใหม่
+      // สร้างเอกสารใหม่
       const documentFile = new this.documentModel({
         File_ID: randomUUID(),
         File_Path: fileUrl,
-        File_Name: file.originalname,
+        File_Name: beautifulFileName, // ✅ ใช้ชื่อไฟล์ที่สวย
+        Original_Name: file.originalname, // ✅ เก็บชื่อเดิมไว้
         File_Type: file.mimetype,
         File_Size: file.size,
         Document_Type: uploadDocumentDto.documentType,
@@ -195,15 +225,115 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
         service: uploadDocumentDto.serviceId,
         isVerified: uploadDocumentDto.isVerified || false
       });
-      
-      document = await documentFile.save();
+
+      return documentFile.save();
     }
-    
-    uploadedDocuments.push(document);
   }
 
-  return uploadedDocuments;
-}
+  // ✅ อัปเดต uploadMultipleDocuments ด้วย
+  async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: UploadDocumentDto): Promise<DocumentFile[]> {
+    console.log('📄 Starting multiple documents upload process...');
+    
+    // 1. ตรวจสอบว่า Candidate มีอยู่จริง
+    const candidate = await this.candidatesService.findOne(uploadDocumentDto.candidateId);
+    if (!candidate) {
+      throw new NotFoundException(`Candidate with ID ${uploadDocumentDto.candidateId} not found`);
+    }
+
+    // 2. ตรวจสอบว่า Service มีอยู่จริง
+    const service = await this.servicesService.findOne(uploadDocumentDto.serviceId);
+    if (!service) {
+      throw new NotFoundException(`Service with ID ${uploadDocumentDto.serviceId} not found`);
+    }
+
+    // 3. ตรวจสอบว่าเอกสารประเภทนี้ถูกกำหนดให้ต้องใช้สำหรับ Service นี้หรือไม่
+    const requiredDocument = service.RequiredDocuments?.find(
+      doc => doc.document_id === uploadDocumentDto.documentType
+    );
+    
+    if (!requiredDocument) {
+      throw new BadRequestException(
+        `Document type "${uploadDocumentDto.documentType}" is not required for service "${service.Service_Title}"`
+      );
+    }
+
+    const uploadedDocuments: DocumentFile[] = [];
+    const folder = `documents/${uploadDocumentDto.candidateId}/${uploadDocumentDto.serviceId}/${uploadDocumentDto.documentType}`;
+
+    // 4. วนลูปแต่ละไฟล์
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      // 4.1 ตรวจสอบประเภทไฟล์
+      const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || '';
+      if (!requiredDocument.file_types.includes(fileExtension)) {
+        throw new BadRequestException(
+          `File type "${fileExtension}" is not allowed. Allowed types: ${requiredDocument.file_types.join(', ')}`
+        );
+      }
+
+      // 4.2 ตรวจสอบขนาดไฟล์
+      if (requiredDocument.max_size && file.size > requiredDocument.max_size) {
+        throw new BadRequestException(
+          `File size (${file.size} bytes) exceeds the maximum allowed size (${requiredDocument.max_size} bytes)`
+        );
+      }
+
+      // ✅ 4.3 สร้างชื่อไฟล์ที่สวยสำหรับไฟล์หลายตัว
+      const beautifulFileName = this.createBeautifulFileName(
+        candidate, 
+        uploadDocumentDto.documentType, 
+        file.originalname, 
+        i // เพิ่มหมายเลขไฟล์
+      );
+
+      const uploadResult = await this.filesService.uploadFile(file, folder, beautifulFileName);
+      const fileUrl = uploadResult.url; // ✅ ใช้จาก uploadResult
+
+      // 4.4 ตรวจสอบว่ามีเอกสารประเภทนี้อยู่แล้วหรือไม่
+      const existingDocument = await this.documentModel.findOne({
+        candidate: uploadDocumentDto.candidateId,
+        service: uploadDocumentDto.serviceId,
+        Document_Type: uploadDocumentDto.documentType
+      }).exec();
+
+      let document: DocumentFile;
+      
+      if (existingDocument) {
+        // อัปเดตเอกสารที่มีอยู่
+        existingDocument.File_Path = fileUrl;
+        existingDocument.File_Name = beautifulFileName; // ✅ ใช้ชื่อไฟล์ที่สวย
+        existingDocument.Original_Name = file.originalname; // ✅ เก็บชื่อเดิมไว้
+        existingDocument.File_Type = file.mimetype;
+        existingDocument.File_Size = file.size;
+        existingDocument.isVerified = false;
+        existingDocument.verifiedAt = null;
+        existingDocument.verifiedBy = null;
+        
+        document = await existingDocument.save();
+      } else {
+        // สร้างเอกสารใหม่
+        const documentFile = new this.documentModel({
+          File_ID: randomUUID(),
+          File_Path: fileUrl,
+          File_Name: beautifulFileName, // ✅ ใช้ชื่อไฟล์ที่สวย
+          Original_Name: file.originalname, // ✅ เก็บชื่อเดิมไว้
+          File_Type: file.mimetype,
+          File_Size: file.size,
+          Document_Type: uploadDocumentDto.documentType,
+          candidate: uploadDocumentDto.candidateId,
+          service: uploadDocumentDto.serviceId,
+          isVerified: uploadDocumentDto.isVerified || false
+        });
+        
+        document = await documentFile.save();
+      }
+      
+      uploadedDocuments.push(document);
+    }
+
+    return uploadedDocuments;
+  }
 
   async getDocumentsByCandidateAndService(candidateId: string, serviceId: string): Promise<DocumentFile[]> {
     return this.documentModel.find({
@@ -239,7 +369,17 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
       throw new NotFoundException(`Document with ID ${documentId} not found`);
     }
     
-    // TODO: ถ้าต้องการลบไฟล์จาก MinIO ด้วย ให้เรียกใช้ filesService.deleteFile(...)
+    // ✅ ลบไฟล์จาก MinIO ด้วย
+    if (document.File_Path) {
+      try {
+        const urlParts = document.File_Path.split('/static/');
+        if (urlParts.length > 1) {
+          await this.filesService.deleteFile(urlParts[1]);
+        }
+      } catch (error) {
+        console.error('Failed to delete document file:', error);
+      }
+    }
     
     await this.documentModel.findByIdAndDelete(documentId).exec();
   }
@@ -255,19 +395,14 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
       candidate: candidateId
     }).exec();
     
-    // เราไม่ต้อง populate service เพราะมันทำให้เกิดปัญหา
-    // แทนที่จะใช้ .populate('service') เราจะดึง ID ออกมาอย่างเดียว
-    
     // จัดกลุ่มตาม service
     const serviceDocuments = {};
     
     for (const doc of documents) {
-      // ดึง service ID เป็น string
-      const serviceId = doc.service.toString(); // เรียกใช้ toString() เพื่อแน่ใจว่าได้ string
+      const serviceId = doc.service.toString();
       
       if (!serviceDocuments[serviceId]) {
         try {
-          // ส่ง string ID ไปให้ findOne
           const service = await this.servicesService.findOne(serviceId);
           serviceDocuments[serviceId] = {
             service: {
@@ -279,7 +414,6 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
           };
         } catch (error) {
           console.error(`Error fetching service with ID ${serviceId}:`, error);
-          // กรณีไม่พบ service ให้สร้างข้อมูลพื้นฐาน
           serviceDocuments[serviceId] = {
             service: {
               _id: serviceId,
@@ -294,7 +428,8 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
       serviceDocuments[serviceId].documents.push({
         _id: doc._id,
         documentType: doc.Document_Type,
-        fileName: doc.File_Name,
+        fileName: doc.File_Name, // ✅ ชื่อไฟล์ที่สวย
+        originalName: doc.Original_Name || doc.File_Name, // ✅ ชื่อไฟล์เดิม
         filePath: doc.File_Path,
         isVerified: doc.isVerified,
         uploadedAt: (doc as any).createdAt || new Date()
@@ -314,7 +449,6 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
 
   async getMissingDocuments(candidateId: string): Promise<any> {
     const candidate = await this.candidatesService.findOne(candidateId);
-    console.log(candidateId)
     if (!candidate) {
       throw new NotFoundException(`Candidate with ID ${candidateId} not found`);
     }
@@ -322,7 +456,6 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
     // หาบริการทั้งหมดที่ candidate ใช้
     const services = await Promise.all(
       candidate.services.map(serviceId => {
-        // แน่ใจว่าส่ง string ไปให้ findOne
         return this.servicesService.findOne(serviceId._id.toString());
       })
     );
@@ -340,15 +473,13 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
         continue;
       }
       
-      const serviceId = service._id.toString(); // ดึง ID เป็น string
+      const serviceId = service._id.toString();
       
       for (const requiredDoc of service.RequiredDocuments) {
-        // ตรวจสอบว่าเอกสารนี้จำเป็นหรือไม่
         if (!requiredDoc.required) {
           continue;
         }
         
-        // ตรวจสอบว่ามีการอัปโหลดเอกสารนี้แล้วหรือยัง
         const docExists = documents.some(doc => 
           doc.service.toString() === serviceId && doc.Document_Type === requiredDoc.document_id
         );
@@ -376,6 +507,7 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
     };
   }
 
+  // ✅ อัปเดต refreshDocumentUrl ให้ใช้ static URL
   async refreshDocumentUrl(documentId: string): Promise<DocumentFile> {
     const document = await this.documentModel.findById(documentId).exec();
     
@@ -383,17 +515,19 @@ async uploadMultipleDocuments(files: Express.Multer.File[], uploadDocumentDto: U
       throw new NotFoundException(`Document with ID ${documentId} not found`);
     }
     
-    // ดึงชื่อไฟล์จาก File_Path
-    const filePath = document.File_Path;
-    const filePathWithoutQuery = filePath.split('?')[0];
-    const fileKey = filePathWithoutQuery.substring(filePathWithoutQuery.indexOf('/main/') + 6);
+    // ถ้าเป็น static URL แล้ว ไม่ต้องทำอะไร
+    if (document.File_Path.includes('/files/static/')) {
+      return document;
+    }
     
-    // สร้าง URL ใหม่
-    const newUrl = await this.filesService.getFile(fileKey);
+    // ถ้ายังเป็น presigned URL เก่า ให้แปลงเป็น static URL
+    const urlParts = document.File_Path.split('/static/');
+    if (urlParts.length > 1) {
+      const newUrl = this.filesService.getFileUrl(urlParts[1]);
+      document.File_Path = newUrl;
+      return document.save();
+    }
     
-    // อัปเดตข้อมูลในฐานข้อมูล
-    document.File_Path = newUrl;
-    
-    return document.save();
+    return document;
   }
 }

@@ -1,5 +1,4 @@
 // แก้ไขไฟล์ src/documents/schemas/document.schema.ts
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { Candidate } from '../../candidates/schemas/candidate.schema';
@@ -17,6 +16,10 @@ export class DocumentFile {
   
   @Prop({ required: true })
   File_Name: string;
+  
+  // ✅ เพิ่มฟิลด์ Original_Name
+  @Prop({ required: false })
+  Original_Name: string;
   
   @Prop({ required: true })
   File_Type: string;

@@ -276,11 +276,26 @@ export class UsersController {
         };
       }
 
-      // อัปโหลดไฟล์ไปยัง MinIO
+      // ✅ ลบรูปเดิมก่อน (ถ้ามี)
+      const currentUser = await this.usersService.findById(req.user.userId);
+      if (currentUser?.profilePicture) {
+        try {
+          // แยก filename จาก static URL
+          const urlParts = currentUser.profilePicture.split('/static/');
+          if (urlParts.length > 1) {
+            const filename = urlParts[1];
+            await this.filesService.deleteFile(filename);
+          }
+        } catch (error) {
+          console.error('Failed to delete old profile picture:', error);
+        }
+      }
+
+      // อัปโหลดไฟล์ใหม่
       const uploadResult = await this.filesService.uploadFile(file, 'profiles');
       
-      // รับ URL ของไฟล์ที่อัปโหลด
-      const profilePictureUrl = await this.filesService.getFile(uploadResult.filename);
+      // ✅ ใช้ static URL แทน presigned URL
+      const profilePictureUrl = uploadResult.url;
       
       // อัปเดตข้อมูลผู้ใช้
       const updatedUser = await this.usersService.updateProfilePicture(
@@ -317,126 +332,6 @@ export class UsersController {
     }
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin)
-  @Patch('admin/user/:id')
-  async updateUserByAdmin(
-    @Param('id') id: string,
-    @Body() updateProfileDto: UpdateProfileDto
-  ) {
-    try {
-      // ตรวจสอบว่าผู้ใช้มีอยู่จริงหรือไม่
-      const user = await this.usersService.findById(id);
-      if (!user) {
-        return {
-          success: false,
-          statusCode: HttpStatus.NOT_FOUND,
-          errorCode: 'USER_NOT_FOUND',
-          message: 'ไม่พบข้อมูลผู้ใช้'
-        };
-      }
-      
-      // ตรวจสอบว่ามีการส่ง username มาหรือไม่
-      if (updateProfileDto.username) {
-        // ตรวจสอบความถูกต้องของ username
-        if (updateProfileDto.username.length < 3) {
-          return {
-            success: false,
-            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-            errorCode: 'VALIDATION_ERROR',
-            message: 'ชื่อผู้ใช้ต้องมีความยาวอย่างน้อย 3 ตัวอักษร',
-            validationErrors: {
-              username: 'ชื่อผู้ใช้ต้องมีความยาวอย่างน้อย 3 ตัวอักษร'
-            }
-          };
-        }
-        
-        // ตรวจสอบว่า username ซ้ำหรือไม่
-        const existingUser = await this.usersService.findByUsername(updateProfileDto.username);
-        if (existingUser && existingUser._id.toString() !== id) {
-          return {
-            success: false,
-            statusCode: HttpStatus.CONFLICT,
-            errorCode: 'USERNAME_ALREADY_EXISTS',
-            message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาเลือกชื่อผู้ใช้อื่น'
-          };
-        }
-      }
-      
-      // ตรวจสอบการเปลี่ยนรหัสผ่าน
-      if (updateProfileDto.newPassword) {
-        // ตรวจสอบว่ารหัสผ่านใหม่มีความยาวเพียงพอหรือไม่
-        if (updateProfileDto.newPassword.length < 6) {
-          return {
-            success: false,
-            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-            errorCode: 'VALIDATION_ERROR',
-            message: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร',
-            validationErrors: {
-              newPassword: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร'
-            }
-          };
-        }
-        
-        // สำหรับ admin ไม่จำเป็นต้องใส่รหัสผ่านปัจจุบัน
-        delete updateProfileDto.currentPassword;
-      }
-      
-      // อัปเดตข้อมูลผู้ใช้โดย admin
-      const updatedUser = await this.usersService.updateProfileByAdmin(
-        id,
-        updateProfileDto
-      );
-      
-      if (!updatedUser) {
-        return {
-          success: false,
-          statusCode: HttpStatus.NOT_FOUND,
-          errorCode: 'USER_NOT_FOUND',
-          message: 'ไม่พบข้อมูลผู้ใช้'
-        };
-      }
-      
-      // ไม่ส่งข้อมูล password กลับไป
-      const userObject = updatedUser.toObject();
-      delete userObject.password;
-      
-      return {
-        success: true,
-        data: userObject,
-        message: 'อัปเดตข้อมูลผู้ใช้เรียบร้อยแล้ว'
-      };
-    } catch (error) {
-      console.error('Error updating user by admin:', error);
-      
-      // จัดการกับ error ที่อาจเกิดจาก service
-      if (error instanceof ConflictException) {
-        return {
-          success: false,
-          statusCode: HttpStatus.CONFLICT,
-          errorCode: 'USERNAME_ALREADY_EXISTS',
-          message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาเลือกชื่อผู้ใช้อื่น'
-        };
-      }
-      
-      if (error instanceof BadRequestException) {
-        return {
-          success: false,
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorCode: 'BAD_REQUEST',
-          message: error.message || 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบข้อมูลที่กรอก'
-        };
-      }
-      
-      return {
-        success: false,
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorCode: 'INTERNAL_SERVER_ERROR',
-        message: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล กรุณาลองใหม่อีกครั้ง'
-      };
-    }
-  }
-  
   @UseGuards(JwtAuthGuard)
   @Delete('profile-picture')
   async removeProfilePicture(@Request() req) {
@@ -644,90 +539,6 @@ export class UsersController {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         errorCode: 'UPDATE_ROLE_FAILED',
         message: 'เกิดข้อผิดพลาดในการเปลี่ยนบทบาทผู้ใช้ กรุณาลองใหม่อีกครั้ง'
-      };
-    }
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin)
-  @Delete(':id')
-  async deleteUser(
-    @Param('id') id: string,
-    @User() user
-  ) {
-    try {
-      // ป้องกันไม่ให้ admin ลบตัวเอง
-      if (id === user.userId) {
-        return {
-          success: false,
-          statusCode: HttpStatus.FORBIDDEN,
-          errorCode: 'CANNOT_DELETE_SELF',
-          message: 'ไม่สามารถลบบัญชีของตัวเองได้'
-        };
-      }
-      
-      // ตรวจสอบว่าผู้ใช้เป็น admin หรือไม่ (เพิ่มความมั่นใจอีกชั้น)
-      if (!user.roles.includes(Role.Admin)) {
-        return {
-          success: false,
-          statusCode: HttpStatus.FORBIDDEN,
-          errorCode: 'ADMIN_REQUIRED',
-          message: 'เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถลบผู้ใช้ได้'
-        };
-      }
-      
-      // ดึงข้อมูลผู้ใช้ก่อนลบ (เพื่อตรวจสอบรูปโปรไฟล์)
-      const userToDelete = await this.usersService.findById(id);
-      
-      if (!userToDelete) {
-        return {
-          success: false,
-          statusCode: HttpStatus.NOT_FOUND,
-          errorCode: 'USER_NOT_FOUND',
-          message: 'ไม่พบข้อมูลผู้ใช้'
-        };
-      }
-      
-      // ถ้ามีรูปโปรไฟล์ ให้ลบไฟล์ด้วย
-      if (userToDelete.profilePicture) {
-        try {
-          // แยก filename จาก URL
-          const url = new URL(userToDelete.profilePicture);
-          const pathParts = url.pathname.split('/');
-          const filename = pathParts[pathParts.length - 1];
-          
-          // ลบไฟล์จาก MinIO
-          await this.filesService.deleteFile(`profiles/${filename}`);
-        } catch (error) {
-          console.error('Failed to delete profile picture file:', error);
-          // ไม่ throw error เพื่อให้สามารถลบข้อมูลในฐานข้อมูลได้ต่อ
-        }
-      }
-      
-      // ลบผู้ใช้
-      await this.usersService.deleteUser(id);
-      
-      return {
-        success: true,
-        message: 'ลบผู้ใช้เรียบร้อยแล้ว'
-      };
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      
-      if (error instanceof NotFoundException) {
-        return {
-          success: false,
-          statusCode: HttpStatus.NOT_FOUND,
-          errorCode: 'USER_NOT_FOUND',
-          message: 'ไม่พบข้อมูลผู้ใช้'
-        };
-      }
-      
-      return {
-        success: false,
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorCode: 'DELETE_USER_FAILED',
-        message: 'เกิดข้อผิดพลาดในการลบผู้ใช้ กรุณาลองใหม่อีกครั้ง'
       };
     }
   }

@@ -112,7 +112,7 @@ async uploadResultFile(
   const fileNameWithUUID = `${randomUUID()}-${customFileName}`;
   
   const uploadResult = await this.filesService.uploadFile(file, folder, fileNameWithUUID);
-  const fileUrl = await this.filesService.getFile(`${folder}/${fileNameWithUUID}`);
+  const fileUrl = uploadResult.url; 
   
   // อัปเดตข้อมูล Candidate
   const resultData = {

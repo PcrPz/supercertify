@@ -14,6 +14,7 @@ import { MinioModule } from './minio/minio.module';
 import { FilesModule } from './files/files.module';
 import { DocumentsModule } from './documents/documents.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { SettingsModule } from './settings/settings.module';
 import config from './config/config';
 
 
@@ -33,7 +34,8 @@ import config from './config/config';
   MinioModule,
   FilesModule,
   DocumentsModule,
-  CouponsModule],
+  CouponsModule,
+  SettingsModule],
   controllers: [AppController],
   providers: [AppService],
 })
