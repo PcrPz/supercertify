@@ -1,6 +1,3 @@
-// src/orders/schemas/order.schema.ts
-// ตรวจสอบว่า Schema มี field ที่จำเป็น
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { User } from '../../users/schemas/user.schema';
@@ -65,21 +62,30 @@ export class Order {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Payment' })
   payment: MongooseSchema.Types.ObjectId;
   
-  // ✅ ตรวจสอบว่ามี field เหล่านี้
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Coupon', default: null })
   coupon: MongooseSchema.Types.ObjectId;
   
   @Prop({ default: 0 })
-  couponDiscount: number; // ✅ จำนวนเงินส่วนลดจากคูปอง
+  couponDiscount: number;
   
   @Prop({ default: 0 })
-  promotionDiscount: number; // ✅ จำนวนเงินส่วนลดจากโปรโมชั่น
+  promotionDiscount: number;
   
   @Prop({ default: false })
   paymentNotificationSent: boolean;
   
   @Prop({ default: false })
   paymentApprovalSent: boolean;
+
+  // เพิ่มฟิลด์สำหรับการ Review
+  @Prop({ default: false })
+  isReviewed: boolean;
+  
+  @Prop({ type: Date, default: null })
+  reviewedAt: Date;
+  
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Review', default: null })
+  review: MongooseSchema.Types.ObjectId;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

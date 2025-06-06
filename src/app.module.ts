@@ -15,6 +15,7 @@ import { FilesModule } from './files/files.module';
 import { DocumentsModule } from './documents/documents.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { SettingsModule } from './settings/settings.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import config from './config/config';
 
 
@@ -35,7 +36,8 @@ import config from './config/config';
   FilesModule,
   DocumentsModule,
   CouponsModule,
-  SettingsModule],
+  SettingsModule,
+  ReviewsModule],
   controllers: [AppController],
   providers: [AppService],
 })

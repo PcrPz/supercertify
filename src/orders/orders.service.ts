@@ -1,6 +1,6 @@
 // src/orders/orders.service.ts - แก้ไข TypeScript errors
 
-import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model} from 'mongoose';
 import { Types } from 'mongoose';
@@ -258,4 +258,94 @@ async deleteOrder(id: string): Promise<any> {
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     return `${prefix}${timestamp}${random}`;
   }
+
+  async markOrderAsReviewed(orderId: string, reviewId: string): Promise<Order> {
+    console.log(`Marking order ${orderId} as reviewed with review ${reviewId}`);
+    
+    // ตรวจสอบว่า Order มีอยู่จริงหรือไม่
+    const order = await this.orderModel.findById(orderId);
+    if (!order) {
+      throw new NotFoundException(`Order with ID ${orderId} not found`);
+    }
+    
+    console.log('Current order review status:', { 
+      isReviewed: order.isReviewed, 
+      reviewedAt: order.reviewedAt, 
+      review: order.review 
+    });
+    
+    // อัปเดตสถานะการ Review
+    const updatedOrder = await this.orderModel.findByIdAndUpdate(
+      orderId,
+      {
+        $set: {
+          isReviewed: true,
+          reviewedAt: new Date(),
+          review: reviewId
+        }
+      },
+      { new: true }
+    )
+    .populate('candidates')
+    .populate('user')
+    .populate('payment')
+    .populate('review')
+    .exec();
+
+    if (!updatedOrder) {
+      throw new NotFoundException(`Order with ID ${orderId} not found after update`);
+    }
+    
+    console.log('Order marked as reviewed successfully');
+    
+    return updatedOrder;
+  }
+
+async findReviewableOrdersByUserId(userId: string): Promise<Order[]> {
+  console.log('Looking for reviewable orders for user:', userId);
+
+  // ดึง order ที่มีสถานะ completed และยังไม่ได้รับการ review
+  const orders = await this.orderModel.find({
+    user: userId,
+    OrderStatus: 'completed',
+    isReviewed: { $ne: true } // ใช้ $ne เพื่อให้รวมกรณีที่ isReviewed เป็น false หรือ null
+  })
+  .populate('candidates')
+  .populate('payment')
+  .exec();
+
+  console.log(`Found ${orders.length} reviewable orders`);
+  
+  // สำหรับ debug
+  if (orders.length > 0) {
+    console.log('Sample order:', {
+      id: orders[0]._id,
+      status: orders[0].OrderStatus,
+      isReviewed: orders[0].isReviewed
+    });
+  }
+
+  return orders;
+}
+
+async checkOrderReviewStatus(orderId: string, userId: string): Promise<any> {
+  const order = await this.findOne(orderId);
+  
+  // ตรวจสอบว่าเป็นเจ้าของ Order หรือไม่
+  if (order.user._id.toString() !== userId) {
+    throw new ForbiddenException('You do not have permission to check this order');
+  }
+  
+  // ตรวจสอบสถานะของ Order
+  const isCompleted = order.OrderStatus === 'completed';
+  
+  return {
+    orderId: order._id,
+    canReview: isCompleted && !order.isReviewed,
+    isCompleted,
+    isReviewed: order.isReviewed,
+    reviewedAt: order.reviewedAt,
+    orderStatus: order.OrderStatus
+  };
+}
 }

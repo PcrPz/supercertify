@@ -70,7 +70,22 @@ export class OrdersController {
     
     return ordersWithStatus;
   }
-
+  @Get('reviewable')
+  @UseGuards(JwtAuthGuard)
+  async getReviewableOrders(@User() user): Promise<any> {
+    try {
+      const orders = await this.ordersService.findReviewableOrdersByUserId(user.userId);
+      
+      return {
+        success: true,
+        data: orders,
+        message: 'Reviewable orders fetched successfully'
+      };
+    } catch (error) {
+      console.error('Error getting reviewable orders:', error);
+      throw new BadRequestException('ไม่สามารถดึงรายการคำสั่งซื้อที่สามารถรีวิวได้');
+    }
+  }
 
   @Get('count-by-user')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -456,5 +471,30 @@ async applyOrderCouponByCode(
     
     return updatedOrder;
   }
-    
+  // เพิ่ม endpoint ต่อไปนี้ใน OrdersController
+
+  @Get(':id/review-status')
+  @UseGuards(JwtAuthGuard)
+  async checkOrderReviewStatus(@Param('id') id: string, @User() user): Promise<any> {
+    try {
+      const status = await this.ordersService.checkOrderReviewStatus(id, user.userId);
+      
+      return {
+        success: true,
+        data: status,
+        message: 'Order review status fetched successfully'
+      };
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      console.error('Error checking order review status:', error);
+      throw new BadRequestException('ไม่สามารถตรวจสอบสถานะการรีวิวได้');
+    }
+  } 
 }
