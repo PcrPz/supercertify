@@ -330,7 +330,7 @@ async claimCoupon(@Param('id') id: string, @Request() req) {
   @UseGuards(JwtAuthGuard)
   async createSurveyCoupon(@User() user) {
     try {
-      // ✅ ใช้ method ใหม่ที่จัดการ survey coupon โดยเฉพาะ
+      // สร้างคูปองส่วนตัวโดยตรง
       const userCoupon = await this.couponsService.createSurveyCoupon(user.userId);
       
       return {

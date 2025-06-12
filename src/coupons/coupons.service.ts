@@ -410,7 +410,7 @@ export class CouponsService {
   async findSurveyCouponByUser(userId: string): Promise<Coupon | null> {
     const coupon = await this.couponModel.findOne({
       claimedBy: new Types.ObjectId(userId),
-      couponType: CouponType.SURVEY // ✅ ใช้ couponType แทน regex
+      couponType: CouponType.SURVEY
     }).exec();
     
     return coupon;
@@ -464,17 +464,18 @@ export class CouponsService {
 }
 
 
-async findReleasedCoupons(limit: number = 50): Promise<Coupon[]> {
-  // หาคูปองที่เคยถูกใช้แล้วแต่ถูก release (usedAt มีค่าแต่ isUsed เป็น false)
-  return this.couponModel.find({
-    isUsed: false,
-    usedAt: { $ne: null }, // เคยถูกใช้
-    usedInOrder: null
-  })
-  .sort({ usedAt: -1 }) // เรียงตามเวลาที่ถูกใช้ล่าสุด
-  .limit(limit)
-  .exec();
-}
+  async findReleasedCoupons(limit: number = 50): Promise<Coupon[]> {
+    // หาคูปองที่เคยถูกใช้แล้วแต่ถูก release (usedAt มีค่าแต่ isUsed เป็น false)
+    return this.couponModel.find({
+      isUsed: false,
+      usedAt: { $ne: null }, // เคยถูกใช้
+      usedInOrder: null
+    })
+    .sort({ usedAt: -1 }) // เรียงตามเวลาที่ถูกใช้ล่าสุด
+    .limit(limit)
+    .exec();
+  }
+
   async createSurveyCoupon(userId: string): Promise<Coupon> {
     // ตรวจสอบว่า user เคยรับ survey coupon แล้วหรือยัง
     const existingSurveyCoupon = await this.findSurveyCouponByUser(userId);
@@ -483,32 +484,28 @@ async findReleasedCoupons(limit: number = 50): Promise<Coupon[]> {
       throw new BadRequestException('คุณเคยรับคูปองจากแบบสอบถามแล้ว');
     }
     
-    // หา survey coupon ที่ยังเคลมได้
-    const availableSurveyCoupons = await this.findSurveyCoupons();
+    // สร้างรหัสคูปองที่ไม่ซ้ำ
+    const randomCode = await this.generateUniqueSurveyCode();
     
-    let surveyCoupon: Coupon;
+    // กำหนดวันหมดอายุ (3 เดือนจากปัจจุบัน)
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + 3);
     
-    if (availableSurveyCoupons.length > 0) {
-      // ใช้ survey coupon ที่มีอยู่
-      surveyCoupon = availableSurveyCoupons[0];
-    } else {
-      // สร้าง survey coupon ใหม่
-      const expiryDate = new Date();
-      expiryDate.setMonth(expiryDate.getMonth() + 3);
-      
-      const randomCode = await this.generateUniqueSurveyCode();
-      
-      surveyCoupon = await this.createPublicCoupon({
-        code: randomCode,
-        discountPercent: 15,
-        expiryDate: expiryDate.toISOString(),
-        description: 'คูปองส่วนลดจากการทำแบบสอบถาม',
-        couponType: CouponType.SURVEY // ✅ ระบุเป็น SURVEY type
-      });
-    }
+    // สร้างคูปองส่วนตัวโดยตรง (ไม่ผ่านการเคลม)
+    const newCoupon = new this.couponModel({
+      code: randomCode,
+      discountPercent: 15,
+      expiryDate: expiryDate,
+      description: 'คูปองส่วนลดจากการทำแบบสอบถาม',
+      isActive: true,
+      isPublic: false, // ตั้งเป็น false เพราะเป็นคูปองส่วนตัว
+      isClaimable: false, // ไม่ต้องเคลม
+      couponType: CouponType.SURVEY,
+      claimedBy: new Types.ObjectId(userId),
+      claimedAt: new Date()
+    });
     
-    // เคลมคูปองให้ user
-    return this.claimCoupon(surveyCoupon._id.toString(), userId);
+    return newCoupon.save();
   }
 
     private async generateUniqueSurveyCode(): Promise<string> {
