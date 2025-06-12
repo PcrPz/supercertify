@@ -32,4 +32,13 @@ export class AdminUpdateReviewDto {
   @IsOptional()
   @IsBoolean()
   isDisplayed?: boolean;
+  
+  // เพิ่มฟิลด์ต่อไปนี้
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+  
+  @IsOptional()
+  @IsArray()
+  tags?: string[];
 }

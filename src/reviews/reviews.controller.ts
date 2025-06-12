@@ -10,8 +10,10 @@ import {
   HttpStatus, 
   ForbiddenException, 
   NotFoundException, 
-  BadRequestException 
+  BadRequestException,
+  Query  // เพิ่ม Query ตรงนี้
 } from '@nestjs/common';
+import { QueryReviewDto } from './dto/query-review.dto';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto, AdminUpdateReviewDto } from './dto/update-review.dto';
@@ -76,9 +78,9 @@ export class ReviewsController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  async findAll() {
+  async findAll(@Query() query: QueryReviewDto) {
     try {
-      const reviews = await this.reviewsService.findAll();
+      const reviews = await this.reviewsService.findAll(query);
       
       return {
         success: true,
@@ -96,9 +98,9 @@ export class ReviewsController {
   }
 
   @Get('public')
-  async findAllPublic() {
+  async findAllPublic(@Query() query: QueryReviewDto) {
     try {
-      const reviews = await this.reviewsService.findAllPublic();
+      const reviews = await this.reviewsService.findAllPublic(query);
       
       return {
         success: true,
@@ -322,7 +324,10 @@ export class ReviewsController {
   @UseGuards(JwtAuthGuard)
   async remove(@Param('id') id: string, @User() user) {
     try {
-      await this.reviewsService.remove(id, user.userId);
+
+      const isAdmin = user.roles?.includes(Role.Admin);
+
+      await this.reviewsService.remove(id, user.userId, isAdmin);
       
       return {
         success: true,

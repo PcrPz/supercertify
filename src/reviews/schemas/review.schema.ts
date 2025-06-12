@@ -22,15 +22,6 @@ export class Review {
   @Prop({ required: true })
   comment: string;
 
-  @Prop({ default: false })
-  isVerified: boolean;
-
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', default: null })
-  verifiedBy: MongooseSchema.Types.ObjectId;
-
-  @Prop({ type: Date, default: null })
-  verifiedAt: Date;
-
   @Prop({ default: true })
   isPublic: boolean;
 

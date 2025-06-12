@@ -5,6 +5,7 @@ import { Review, ReviewDocument } from './schemas/review.schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto, AdminUpdateReviewDto } from './dto/update-review.dto';
 import { OrdersService } from '../orders/orders.service';
+import { QueryReviewDto } from './dto/query-review.dto';
 
 @Injectable()
 export class ReviewsService {
@@ -78,32 +79,125 @@ export class ReviewsService {
     return savedReview;
   }
 
-  async findAll(): Promise<Review[]> {
-    return this.reviewModel.find()
-      .populate('user', '-password')
-      .populate('order')
-      .exec();
-  }
+// reviews.service.ts
+async findAll(query: QueryReviewDto = {}): Promise<Review[]> {
+  const {
+    page = 1,
+    limit = 10,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+    minRating,
+    search,
+    isPublic,
+    isDisplayed  // เพิ่มการรับพารามิเตอร์ isDisplayed
+  } = query;
 
-  async findAllPublic(): Promise<Review[]> {
-    return this.reviewModel.find({ isPublic: true, isVerified: true })
-      .populate('user', '-password')
-      .populate('order')
-      .exec();
+  // สร้าง filter object สำหรับใช้ใน query
+  const filter: any = {};
+  
+  // เพิ่มเงื่อนไขการกรองตาม minRating
+  if (minRating !== undefined) {
+    filter.rating = { $gte: minRating };
   }
   
-  // เพิ่มเมธอดสำหรับดึง Review ที่ถูกเลือกให้แสดงบนหน้าเว็บหลัก
-  async findFeaturedReviews(): Promise<Review[]> {
-    return this.reviewModel.find({ 
-      isPublic: true, 
-      isVerified: true,
-      isDisplayed: true 
-    })
-      .sort({ createdAt: -1 }) // แสดงล่าสุดก่อน
-      .populate('user', '-password')
-      .populate('order')
-      .exec();
+  // เพิ่มเงื่อนไขการกรองตาม isPublic
+  if (isPublic !== undefined) {
+    filter.isPublic = isPublic;
   }
+  
+  // เพิ่มเงื่อนไขการกรองตาม isDisplayed
+  if (isDisplayed !== undefined) {
+    filter.isDisplayed = isDisplayed;
+  }
+  
+  // เพิ่มเงื่อนไขการค้นหา
+  if (search) {
+    filter.$or = [
+      { comment: { $regex: search, $options: 'i' } },
+      { 'userDetails.username': { $regex: search, $options: 'i' } },
+      { 'userDetails.fullName': { $regex: search, $options: 'i' } },
+      { 'orderDetails.trackingNumber': { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  // คำนวณ skip สำหรับการแบ่งหน้า
+  const skip = (page - 1) * limit;
+  
+  // ตั้งค่าการเรียงลำดับ
+  const sortOptions: any = {};
+  sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+  return this.reviewModel.find(filter)
+    .sort(sortOptions)
+    .skip(skip)
+    .limit(limit)
+    .populate('user', '-password')
+    .populate('order')
+    .exec();
+}
+
+async findAllPublic(query: QueryReviewDto = {}): Promise<Review[]> {
+  const {
+    page = 1,
+    limit = 10,
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+    minRating,
+    search,
+    isDisplayed  // เพิ่มการรับพารามิเตอร์ isDisplayed
+  } = query;
+
+  // สร้าง filter object สำหรับใช้ใน query
+  const filter: any = { isPublic: true };
+  
+  // เพิ่มเงื่อนไขการกรองตาม minRating
+  if (minRating !== undefined) {
+    filter.rating = { $gte: minRating };
+  }
+  
+  // เพิ่มเงื่อนไขการกรองตาม isDisplayed
+  if (isDisplayed !== undefined) {
+    filter.isDisplayed = isDisplayed;
+  }
+  
+  // เพิ่มเงื่อนไขการค้นหา
+  if (search) {
+    filter.$or = [
+      { comment: { $regex: search, $options: 'i' } },
+      { 'userDetails.username': { $regex: search, $options: 'i' } },
+      { 'userDetails.fullName': { $regex: search, $options: 'i' } },
+      { 'orderDetails.trackingNumber': { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  // คำนวณ skip สำหรับการแบ่งหน้า
+  const skip = (page - 1) * limit;
+  
+  // ตั้งค่าการเรียงลำดับ
+  const sortOptions: any = {};
+  sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+  return this.reviewModel.find(filter)
+    .sort(sortOptions)
+    .skip(skip)
+    .limit(limit)
+    .populate('user', '-password')
+    .populate('order')
+    .exec();
+}
+  
+  // เพิ่มเมธอดสำหรับดึง Review ที่ถูกเลือกให้แสดงบนหน้าเว็บหลัก
+    async findFeaturedReviews(): Promise<Review[]> {
+    return this.reviewModel.find({ 
+        isPublic: true,
+        // ลบเงื่อนไข isVerified: true ออก
+        isDisplayed: true 
+    })
+        .sort({ createdAt: -1 })
+        .populate('user', '-password')
+        .populate('order')
+        .exec();
+    }
 
   async findByOrderId(orderId: string): Promise<Review[]> {
     return this.reviewModel.find({ order: orderId })
@@ -183,46 +277,42 @@ export class ReviewsService {
     return updatedReview;
     }
 
-  async adminUpdate(id: string, adminUpdateReviewDto: AdminUpdateReviewDto, adminId: string): Promise<Review | null> {
+    async adminUpdate(id: string, adminUpdateReviewDto: AdminUpdateReviewDto, adminId: string): Promise<Review | null> {
     // 1. ตรวจสอบว่า Review มีอยู่จริงหรือไม่
     await this.findOne(id);
     
     // 2. สร้างข้อมูลที่จะอัปเดต
     const updateData: any = { ...adminUpdateReviewDto };
     
-    // 3. ถ้ามีการเปลี่ยนสถานะการตรวจสอบ
-    if (adminUpdateReviewDto.isVerified !== undefined) {
-      updateData.verifiedBy = adminId;
-      updateData.verifiedAt = new Date();
-    }
-    
     // 4. ถ้ามีการเพิ่มการตอบกลับจาก Admin
     if (adminUpdateReviewDto.adminResponse !== undefined) {
-      updateData.adminResponseBy = adminId;
-      updateData.adminResponseAt = new Date();
+        updateData.adminResponseBy = adminId;
+        updateData.adminResponseAt = new Date();
     }
     
     // 5. อัปเดต Review
     return this.reviewModel.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true }
+        id,
+        updateData,
+        { new: true }
     )
     .populate('user', '-password')
     .populate('order')
     .exec();
-  }
+    }
 
-  async remove(id: string, userId: string): Promise<void> {
+  async remove(id: string, userId: string, isAdmin: boolean = false): Promise<void> {
     // 1. ตรวจสอบว่า Review มีอยู่จริงหรือไม่
     const review = await this.findOne(id);
     
     // 2. ตรวจสอบว่าผู้ใช้เป็นเจ้าของ Review หรือไม่
-    const reviewUserId = review.user.toString ? review.user.toString() : 
-                        (review.user as any)._id ? (review.user as any)._id.toString() : review.user;
-    
-    if (reviewUserId !== userId) {
-      throw new ForbiddenException('You do not have permission to delete this review');
+    if (!isAdmin) {
+        const reviewUserId = review.user.toString ? review.user.toString() : 
+                            (review.user as any)._id ? (review.user as any)._id.toString() : review.user;
+        
+        if (reviewUserId !== userId) {
+        throw new ForbiddenException('You do not have permission to delete this review');
+        }
     }
     
     // 3. ลบ Review
@@ -233,45 +323,124 @@ export class ReviewsService {
     }
   }
 
-  async getStats(): Promise<any> {
-    // คำนวณสถิติของ Review เช่น คะแนนเฉลี่ย, จำนวน Review, การกระจายของคะแนน
-    const reviews = await this.reviewModel.find({ isVerified: true }).exec();
-    
-    if (reviews.length === 0) {
-      return {
-        averageRating: 0,
-        totalReviews: 0,
-        distribution: {
-          1: 0,
-          2: 0,
-          3: 0,
-          4: 0,
-          5: 0,
-        },
-      };
+async getStats(): Promise<any> {
+  const aggregationResults = await this.reviewModel.aggregate([
+    {
+      $facet: {
+        // นับจำนวนรีวิวทั้งหมด
+        "totalCount": [{ $count: "count" }],
+        
+        // นับจำนวนรีวิวตามสถานะต่างๆ
+        "statusCounts": [
+          {
+            $group: {
+              _id: {
+                isPublic: "$isPublic",
+                isDisplayed: "$isDisplayed"  // ลบ isVerified ออก
+              },
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        
+        // คำนวณคะแนนเฉลี่ยของรีวิวที่เผยแพร่
+        "averageRating": [
+          { 
+            $match: { 
+              isPublic: true
+              // ลบเงื่อนไข isVerified: true ออก
+            } 
+          },
+          {
+            $group: {
+              _id: null,
+              average: { $avg: "$rating" },
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        
+        // คำนวณการกระจายของคะแนน
+        "distribution": [
+          { 
+            $match: { 
+              isPublic: true
+              // ลบเงื่อนไข isVerified: true ออก 
+            } 
+          },
+          {
+            $group: {
+              _id: "$rating",
+              count: { $sum: 1 }
+            }
+          }
+        ],
+        
+        // นับจำนวนรีวิวที่มีการตอบกลับ
+        "respondedCount": [
+          { 
+            $match: { 
+              adminResponse: { $ne: null } 
+            } 
+          },
+          { $count: "count" }
+        ]
+      }
     }
+  ]).exec();
+  
+  // แปลงผลลัพธ์ให้อยู่ในรูปแบบที่ต้องการ
+  const result = aggregationResults[0];
+  
+  // นับจำนวนรีวิวทั้งหมด
+  const totalReviews = result.totalCount[0]?.count || 0;
+  
+  // ประมวลผลสถานะต่างๆ
+  let publishedCount = 0;
+  let pendingCount = 0;
+  let featuredCount = 0;
+  
+  result.statusCounts.forEach(statusGroup => {
+    const { isPublic, isDisplayed } = statusGroup._id;
     
-    // คำนวณคะแนนเฉลี่ย
-    const totalRating = reviews.reduce((sum, review) => sum + review.rating, 0);
-    const averageRating = totalRating / reviews.length;
-    
-    // คำนวณการกระจายของคะแนน
-    const distribution = {
-      1: 0,
-      2: 0,
-      3: 0,
-      4: 0,
-      5: 0,
-    };
-    
-    reviews.forEach(review => {
-      distribution[review.rating]++;
-    });
-    
-    return {
-      averageRating,
-      totalReviews: reviews.length,
-      distribution,
-    };
-  }
+    if (isPublic === true) {
+      publishedCount += statusGroup.count;
+      
+      if (isDisplayed === true) {  // ลบเงื่อนไข isVerified ออก
+        featuredCount += statusGroup.count;
+      }
+    } else {
+      pendingCount += statusGroup.count;
+    }
+  });
+  
+  // ประมวลผลคะแนนเฉลี่ย
+  const averageRating = result.averageRating[0]?.average || 0;
+  
+  // ประมวลผลการกระจายของคะแนน
+  const distribution = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0
+  };
+  
+  result.distribution.forEach(item => {
+    distribution[item._id] = item.count;
+  });
+  
+  // นับจำนวนรีวิวที่มีการตอบกลับ
+  const respondedCount = result.respondedCount[0]?.count || 0;
+  
+  return {
+    totalReviews,
+    publishedCount,
+    pendingCount,
+    featuredCount,
+    averageRating,
+    distribution,
+    respondedCount
+  };
+}
 }
