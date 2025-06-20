@@ -1,4 +1,5 @@
 // src/payments/payments.service.ts
+
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -24,7 +25,29 @@ export class PaymentsService {
     
     // Check if order already has a payment
     if (existingOrder.payment) {
-      throw new BadRequestException('This order already has a payment associated with it');
+      // ตรวจสอบสถานะการชำระเงินที่มีอยู่
+      try {
+        const existingPayment = await this.paymentModel.findById(existingOrder.payment);
+        
+        // ถ้าการชำระเงินเดิมมีสถานะเป็น failed หรือ refunded ให้ดำเนินการต่อได้
+        if (existingPayment && 
+            (existingPayment.paymentStatus === 'failed' || 
+             existingPayment.paymentStatus === 'refunded')) {
+          
+          console.log(`Previous payment ${existingPayment._id} had status ${existingPayment.paymentStatus}. Allowing new payment.`);
+          
+          // ล้างการอ้างอิงถึงการชำระเงินเดิมในคำสั่งซื้อ
+          await this.orderModel.findByIdAndUpdate(
+            createPaymentDto.orderId,
+            { payment: null }
+          );
+        } else {
+          throw new BadRequestException('This order already has a payment associated with it');
+        }
+      } catch (error) {
+        // ถ้าไม่สามารถดึงข้อมูลการชำระเงินเดิมได้ ให้ปฏิเสธการสร้างการชำระเงินใหม่
+        throw new BadRequestException('This order already has a payment associated with it');
+      }
     }
     
     // Generate a unique payment ID
@@ -102,16 +125,22 @@ export class PaymentsService {
     // If payment status is changed, update the order status accordingly
     if (updatePaymentDto.paymentStatus) {
       let orderStatus = 'awaiting_payment';
+      const updateFields: any = {};
       
       if (updatePaymentDto.paymentStatus === 'pending_verification') {
         orderStatus = 'pending_verification';
       } else if (updatePaymentDto.paymentStatus === 'completed') {
         orderStatus = 'payment_verified';
+      } else if (updatePaymentDto.paymentStatus === 'failed' || updatePaymentDto.paymentStatus === 'refunded') {
+        orderStatus = 'awaiting_payment';
+        updateFields.payment = null; // ล้างการอ้างอิงถึงการชำระเงิน
       }
+      
+      updateFields.OrderStatus = orderStatus;
       
       await this.orderModel.findByIdAndUpdate(
         payment.order,
-        { OrderStatus: orderStatus }
+        updateFields
       );
     }
     
@@ -151,6 +180,9 @@ export class PaymentsService {
     
     // Determine the appropriate order status based on payment status
     let orderStatus: string;
+    // สร้าง object เพื่อเก็บฟิลด์ที่จะอัปเดต
+    const updateFields: any = {};
+    
     switch (status) {
       case 'pending_verification':
         orderStatus = 'pending_verification';
@@ -160,6 +192,9 @@ export class PaymentsService {
         break;
       case 'failed':
       case 'refunded':
+        orderStatus = 'awaiting_payment';
+        updateFields.payment = null; // ล้างการอ้างอิงถึงการชำระเงิน
+        break;
       case 'awaiting_payment':
         orderStatus = 'awaiting_payment';
         break;
@@ -167,10 +202,13 @@ export class PaymentsService {
         orderStatus = 'awaiting_payment';
     }
     
+    // เพิ่มสถานะคำสั่งซื้อลงใน object
+    updateFields.OrderStatus = orderStatus;
+    
     // Update the associated order's status
     await this.orderModel.findByIdAndUpdate(
       payment.order,
-      { OrderStatus: orderStatus }
+      updateFields
     );
     
     return updatedPayment;
