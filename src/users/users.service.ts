@@ -223,4 +223,14 @@ export class UsersService {
       refreshTokenExp: { $gt: new Date() } // ตรวจสอบว่ายังไม่หมดอายุ
     }).exec();
   }
+
+  async findAllAdminEmails(): Promise<string[]> {
+  // ดึงเฉพาะฟิลด์ email จากผู้ใช้ที่มี role เป็น 'admin'
+  const admins = await this.userModel.find({ role: 'admin' })
+    .select('email')
+    .exec();
+  
+  // แยกเอาเฉพาะค่า email และกรองค่าที่เป็น null หรือ undefined ออก
+  return admins.map(admin => admin.email).filter(Boolean);
+}
 }

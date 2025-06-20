@@ -84,6 +84,35 @@ export class UsersController {
     }
   }
 
+  @Get('admin-emails-internal')
+  async getAdminEmailsInternal() {
+    try {
+      const emails = await this.usersService.findAllAdminEmails();
+      
+      if (emails.length === 0) {
+        return {
+          success: false,
+          statusCode: HttpStatus.NOT_FOUND,
+          errorCode: 'NO_ADMIN_EMAILS',
+          message: 'ไม่พบอีเมลของผู้ดูแลระบบ'
+        };
+      }
+      
+      return {
+        success: true,
+        data: emails,
+        message: 'ดึงข้อมูลอีเมลของผู้ดูแลระบบสำเร็จ'
+      };
+    } catch (error) {
+      console.error('Error getting admin emails:', error);
+      return {
+        success: false,
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorCode: 'FETCH_FAILED',
+        message: 'เกิดข้อผิดพลาดในการดึงข้อมูลอีเมลของผู้ดูแลระบบ'
+      };
+    }
+  }
   @UseGuards(JwtAuthGuard)
   @Patch('profile')
   async updateProfile(
@@ -542,4 +571,137 @@ export class UsersController {
       };
     }
   }
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.Admin)
+@Delete(':id')
+async deleteUser(@Param('id') id: string) {
+  try {
+    const result = await this.usersService.deleteUser(id);
+    
+    if (result) {
+      return {
+        success: true,
+        message: 'ลบผู้ใช้เรียบร้อยแล้ว'
+      };
+    } else {
+      return {
+        success: false,
+        statusCode: HttpStatus.NOT_FOUND,
+        errorCode: 'USER_NOT_FOUND',
+        message: 'ไม่พบข้อมูลผู้ใช้'
+      };
+    }
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return {
+      success: false,
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      errorCode: 'DELETE_FAILED',
+      message: 'เกิดข้อผิดพลาดในการลบผู้ใช้ กรุณาลองใหม่อีกครั้ง'
+    };
+  }
+}
+
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.Admin)
+@Patch('admin/user/:id')
+async updateUserByAdmin(
+  @Param('id') id: string,
+  @Body() updateProfileDto: UpdateProfileDto
+) {
+  try {
+    // ตรวจสอบความถูกต้องของข้อมูล
+    if (updateProfileDto.username && updateProfileDto.username.length < 3) {
+      return {
+        success: false,
+        statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        errorCode: 'VALIDATION_ERROR',
+        message: 'ชื่อผู้ใช้ต้องมีความยาวอย่างน้อย 3 ตัวอักษร',
+        validationErrors: {
+          username: 'ชื่อผู้ใช้ต้องมีความยาวอย่างน้อย 3 ตัวอักษร'
+        }
+      };
+    }
+    
+    // ตรวจสอบว่า username ซ้ำหรือไม่ (ถ้ามีการส่งมา)
+    if (updateProfileDto.username) {
+      const existingUser = await this.usersService.findByUsername(updateProfileDto.username);
+      if (existingUser && existingUser._id.toString() !== id) {
+        return {
+          success: false,
+          statusCode: HttpStatus.CONFLICT,
+          errorCode: 'USERNAME_ALREADY_EXISTS',
+          message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาเลือกชื่อผู้ใช้อื่น'
+        };
+      }
+    }
+    
+    // ตรวจสอบความยาวของรหัสผ่านใหม่ (ถ้ามีการส่งมา)
+    if (updateProfileDto.newPassword && updateProfileDto.newPassword.length < 6) {
+      return {
+        success: false,
+        statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        errorCode: 'VALIDATION_ERROR',
+        message: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร',
+        validationErrors: {
+          newPassword: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร'
+        }
+      };
+    }
+    
+    // เรียกใช้งานเมธอด updateProfileByAdmin จาก service
+    const updatedUser = await this.usersService.updateProfileByAdmin(
+      id,
+      updateProfileDto
+    );
+    
+    if (!updatedUser) {
+      return {
+        success: false,
+        statusCode: HttpStatus.NOT_FOUND,
+        errorCode: 'USER_NOT_FOUND',
+        message: 'ไม่พบข้อมูลผู้ใช้'
+      };
+    }
+    
+    // ไม่ส่งข้อมูล password กลับไป
+    const userObject = updatedUser.toObject();
+    delete userObject.password;
+    
+    return {
+      success: true,
+      data: userObject,
+      message: 'อัปเดตข้อมูลผู้ใช้เรียบร้อยแล้ว'
+    };
+  } catch (error) {
+    console.error('Error updating user by admin:', error);
+    
+    // จัดการกับ error ที่อาจเกิดจาก service
+    if (error instanceof ConflictException) {
+      return {
+        success: false,
+        statusCode: HttpStatus.CONFLICT,
+        errorCode: 'USERNAME_ALREADY_EXISTS',
+        message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาเลือกชื่อผู้ใช้อื่น'
+      };
+    }
+    
+    if (error instanceof BadRequestException) {
+      return {
+        success: false,
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorCode: 'BAD_REQUEST',
+        message: error.message || 'ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบข้อมูลที่กรอก'
+      };
+    }
+    
+    return {
+      success: false,
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      errorCode: 'INTERNAL_SERVER_ERROR',
+      message: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล กรุณาลองใหม่อีกครั้ง'
+    };
+  }
+}
 }
