@@ -4,7 +4,11 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString, IsArray } from 'class-valida
 export class CreateCandidateDto {
   @IsNotEmpty()
   @IsString()
-  C_FullName: string;
+  C_FirstName: string;
+
+  @IsNotEmpty()
+  @IsString()
+  C_LastName: string;
 
   @IsOptional()
   @IsEmail()
@@ -16,5 +20,5 @@ export class CreateCandidateDto {
 
   @IsOptional()
   @IsArray()
-  services?: string[]; // IDs ของ services
+  services?: string[];
 }

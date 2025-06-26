@@ -41,6 +41,60 @@ export class OrdersController {
     return this.ordersService.findByUserId(req.user.userId);
   }
 
+  @Get('detailed-results-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  async getOrdersWithDetailedResults() {
+    return this.ordersService.getOrdersWithDetailedResults();
+  }
+  @Get('completion-stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  async getOrderCompletionStats(): Promise<any> {
+    const orders = await this.ordersService.getOrdersWithDetailedResults();
+    
+    const stats = {
+      totalOrders: orders.length,
+      completedOrders: 0,
+      processingOrders: 0,
+      pendingOrders: 0,
+      averageCompletion: 0,
+      candidateStats: {
+        totalCandidates: 0,
+        completedCandidates: 0,
+        pendingCandidates: 0
+      }
+    };
+    
+    let totalCompletionPercentage = 0;
+    let totalCandidates = 0;
+    let completedCandidates = 0;
+    
+    orders.forEach(order => {
+      if (order.orderCompletion.isComplete) {
+        stats.completedOrders++;
+      } else if (order.orderCompletion.percentage > 0) {
+        stats.processingOrders++;
+      } else {
+        stats.pendingOrders++;
+      }
+      
+      totalCompletionPercentage += order.orderCompletion.percentage;
+      totalCandidates += order.orderCompletion.totalCandidates;
+      completedCandidates += order.orderCompletion.completedCandidates;
+    });
+    
+    stats.averageCompletion = orders.length > 0 ? 
+      Math.round(totalCompletionPercentage / orders.length) : 0;
+    
+    stats.candidateStats = {
+      totalCandidates,
+      completedCandidates,
+      pendingCandidates: totalCandidates - completedCandidates
+    };
+    
+    return stats;
+  }
     @Get('with-results-status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.Admin)
@@ -169,7 +223,19 @@ export class OrdersController {
       payment: order.payment
     };
   }
-
+  @Get(':id/detailed-status')
+  @UseGuards(JwtAuthGuard)
+  async getOrderDetailedStatus(@Param('id') id: string, @User() user): Promise<any> {
+    const order = await this.ordersService.findOne(id);
+    
+    // ตรวจสอบสิทธิ์
+    if (!user.roles.includes(Role.Admin) && order.user._id.toString() !== user.userId) {
+      throw new ForbiddenException('You do not have permission to access this order');
+    }
+    
+    return this.ordersService.getOrderDetailedStatus(id);
+  }
+  
   // Update order status (admin only)
   @Put(':id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)

@@ -4,7 +4,11 @@ import { IsEmail, IsOptional, IsString, IsArray } from 'class-validator';
 export class UpdateCandidateDto {
   @IsOptional()
   @IsString()
-  C_FullName?: string;
+  C_FirstName?: string;
+
+  @IsOptional()
+  @IsString()
+  C_LastName?: string;
 
   @IsOptional()
   @IsEmail()
@@ -16,5 +20,5 @@ export class UpdateCandidateDto {
 
   @IsOptional()
   @IsArray()
-  services?: string[]; // IDs ของ services
+  services?: string[];
 }

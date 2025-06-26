@@ -348,4 +348,149 @@ async checkOrderReviewStatus(orderId: string, userId: string): Promise<any> {
     orderStatus: order.OrderStatus
   };
 }
+
+async findOrdersByCandidate(candidateId: string): Promise<Order[]> {
+  return this.orderModel.find({
+    candidates: { $in: [candidateId] }
+  })
+  .populate('candidates')
+  .populate('user')
+  .exec();
+}
+async getOrdersWithDetailedResults(): Promise<any[]> {
+  const orders = await this.orderModel.find()
+    .populate('candidates')
+    .populate('user')
+    .populate('payment')
+    .exec();
+  
+  const ordersWithDetailedStatus = await Promise.all(orders.map(async order => {
+    const candidates = await this.candidatesService.findByOrderIdWithResults(order._id.toString());
+    
+    // วิเคราะห์สถานะรายละเอียดของแต่ละ Candidate
+    const candidateDetails = candidates.map(candidate => {
+      const serviceResults = candidate.serviceResults || [];
+      const summaryResult = candidate.summaryResult;
+      const totalServices = candidate.services.length;
+      const completedServices = serviceResults.length;
+      const hasSummary = !!summaryResult;
+      
+      return {
+        candidateId: candidate._id,
+        candidateName: `${candidate.C_FirstName} ${candidate.C_LastName}`.trim(),
+        candidateEmail: candidate.C_Email,
+        totalServices,
+        completedServices,
+        hasSummary,
+        isComplete: completedServices === totalServices && hasSummary,
+        completionPercentage: Math.round(
+          ((completedServices + (hasSummary ? 1 : 0)) / (totalServices + 1)) * 100
+        ),
+        serviceResults: serviceResults.map(sr => ({
+          serviceId: sr.serviceId,
+          serviceName: sr.serviceName,
+          status: sr.resultStatus,
+          fileName: sr.resultFileName,
+          addedAt: sr.resultAddedAt
+        })),
+        summaryStatus: summaryResult ? {
+          overallStatus: summaryResult.overallStatus,
+          fileName: summaryResult.resultFileName,
+          addedAt: summaryResult.resultAddedAt
+        } : null
+      };
+    });
+    
+    // คำนวณสถานะรวมของ Order
+    const totalCandidates = candidateDetails.length;
+    const completedCandidates = candidateDetails.filter(c => c.isComplete).length;
+    const orderCompletion = totalCandidates > 0 ? 
+      Math.round((completedCandidates / totalCandidates) * 100) : 0;
+    
+    return {
+      ...JSON.parse(JSON.stringify(order)),
+      candidateDetails,
+      orderCompletion: {
+        totalCandidates,
+        completedCandidates,
+        percentage: orderCompletion,
+        isComplete: completedCandidates === totalCandidates && totalCandidates > 0
+      }
+    };
+  }));
+  
+  return ordersWithDetailedStatus;
+}
+
+async getOrderDetailedStatus(orderId: string): Promise<any> {
+  const order = await this.findOne(orderId);
+  const candidates = await this.candidatesService.findByOrderIdWithResults(orderId);
+  
+  // วิเคราะห์สถานะรายละเอียด
+  const candidateDetails = candidates.map(candidate => {
+    const serviceResults = candidate.serviceResults || [];
+    const summaryResult = candidate.summaryResult;
+    const totalServices = candidate.services.length;
+    const completedServices = serviceResults.length;
+    const hasSummary = !!summaryResult;
+    
+    return {
+      candidateId: candidate._id,
+      candidateName: `${candidate.C_FirstName} ${candidate.C_LastName}`.trim(),
+      candidateEmail: candidate.C_Email,
+      totalServices,
+      completedServices,
+      hasSummary,
+      isComplete: completedServices === totalServices && hasSummary,
+      completionPercentage: Math.round(
+        ((completedServices + (hasSummary ? 1 : 0)) / (totalServices + 1)) * 100
+      ),
+      services: candidate.services.map(service => {
+        const serviceResult = serviceResults.find(sr => 
+          sr.serviceId.toString() === service._id.toString()
+        );
+        
+        return {
+          serviceId: service._id,
+          serviceName: service.Service_Title,
+          hasResult: !!serviceResult,
+          result: serviceResult ? {
+            status: serviceResult.resultStatus,
+            fileName: serviceResult.resultFileName,
+            fileUrl: serviceResult.resultFile,
+            addedAt: serviceResult.resultAddedAt,
+            notes: serviceResult.resultNotes
+          } : null
+        };
+      }),
+      summaryResult: summaryResult ? {
+        overallStatus: summaryResult.overallStatus,
+        fileName: summaryResult.resultFileName,
+        fileUrl: summaryResult.resultFile,
+        addedAt: summaryResult.resultAddedAt,
+        notes: summaryResult.resultNotes
+      } : null
+    };
+  });
+  
+  const totalCandidates = candidateDetails.length;
+  const completedCandidates = candidateDetails.filter(c => c.isComplete).length;
+  const orderCompletion = totalCandidates > 0 ? 
+    Math.round((completedCandidates / totalCandidates) * 100) : 0;
+  
+  return {
+    orderId: order._id,
+    orderStatus: order.OrderStatus,
+    trackingNumber: order.TrackingNumber,
+    orderType: order.OrderType,
+    createdAt: (order as any).createdAt,
+    candidateDetails,
+    orderCompletion: {
+      totalCandidates,
+      completedCandidates,
+      percentage: orderCompletion,
+      isComplete: completedCandidates === totalCandidates && totalCandidates > 0
+    }
+  };
+}
 }

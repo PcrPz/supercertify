@@ -108,7 +108,7 @@ export class DocumentsService {
     originalFileName: string, 
     index?: number
   ): string {
-    const cleanCandidateName = this.sanitizeFileName(candidate.C_FullName);
+    const cleanCandidateName = this.sanitizeFileName(`${candidate.C_FirstName} ${candidate.C_LastName}`.trim());
     const cleanDocumentType = this.sanitizeFileName(documentType); // ✅ เปลี่ยนกลับเป็น sanitizeFileName
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const uuid = randomUUID().split('-')[0]; // เอาแค่ 8 ตัวแรก
@@ -439,7 +439,7 @@ export class DocumentsService {
     return {
       candidate: {
         _id: candidate._id,
-        name: candidate.C_FullName,
+        name: `${candidate.C_FirstName} ${candidate.C_LastName}`.trim(),
         email: candidate.C_Email,
         company: candidate.C_Company_Name
       },
@@ -500,7 +500,7 @@ export class DocumentsService {
     return {
       candidate: {
         _id: candidate._id,
-        name: candidate.C_FullName,
+        name: `${candidate.C_FirstName} ${candidate.C_LastName}`.trim(),
         email: candidate.C_Email
       },
       missingDocuments
